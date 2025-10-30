@@ -1,0 +1,24 @@
+[
+    {
+      "id": 1,
+      "title": "جلسه ۱",
+      "desc": "مرور مفاهیم کلیدی مدار هلیکس و ورود به مدار",
+      "videoUrl": "/hls/enc01/index.m3u8",
+      "audioUrl": "/audios/helix01_session1.mp3"
+    },
+    {
+      "id": 2,
+      "title": "جلسه ۲",
+      "desc": "مدارهای یادگیری پیشرفته و تمرین‌های عملی",
+      "videoUrl": "/hls/enc02/index.m3u8",
+      "audioUrl": "/audios/helix01_session2.mp3"
+    },
+    {
+      "id": 3,
+      "title": "جلسه ۳",
+      "desc": "بحث تعاملی و تمرین‌های کاربردی",
+      "videoUrl": "/hls/enc03/index.m3u8",
+      "audioUrl": "/audios/helix01_session3.mp3"
+    }
+  ]
+  

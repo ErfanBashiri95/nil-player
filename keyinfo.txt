@@ -1,0 +1,4 @@
+/hls/test/secret.key
+public\hls\test\secret.key
+0123456789ABCDEF0123456789ABCDEF
+mkdir

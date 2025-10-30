@@ -1,0 +1,17 @@
+[
+    {
+      "id": 1,
+      "title": "جلسه ۱",
+      "desc": "ورود به مدار هلیکس ۰۲ و نقشه راه",
+      "videoUrl": "/hls/enc01/index.m3u8",
+      "audioUrl": "/audios/helix02_session1.mp3"
+    },
+    {
+      "id": 2,
+      "title": "جلسه ۲",
+      "desc": "ابزارهای مربی‌گری و تمرین‌های عملی",
+      "videoUrl": "/hls/enc02/index.m3u8",
+      "audioUrl": "/audios/helix02_session2.mp3"
+    }
+  ]
+  

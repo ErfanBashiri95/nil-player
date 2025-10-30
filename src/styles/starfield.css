@@ -1,0 +1,15 @@
+/* src/styles/starfield.css */
+.login-bg {
+    background-image: url("/assets/galaxy_bg11.png");
+    background-size: cover;
+    background-position: center;
+  }
+  
+  @keyframes fadeInOut {
+    0%, 100% { opacity: 0; }
+    20%, 80% { opacity: 1; }
+  }
+  .animate-fade {
+    animation: fadeInOut 12s infinite;
+  }
+  
