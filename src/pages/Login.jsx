@@ -13,26 +13,46 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth() || {};
 
-  // --- پس‌زمینه: preload + decode برای لود آنی ---
-  const PLACEHOLDER_BG =
+  // ---------- BACKGROUND: guaranteed preload + decode + fallback ----------
+  const FALLBACKS = ["/assets/galaxy_bg11.webp", "/assets/galaxy_bg11.png", "/assets/galaxy_bg11.jpg"];
+  const [bgReady, setBgReady] = useState(false);
+  const [bgUrl, setBgUrl] = useState("");
+  const BASE_GRADIENT =
     "linear-gradient(180deg, rgba(8,14,34,1) 0%, rgba(12,22,50,1) 50%, rgba(9,17,38,1) 100%)";
-  // اگر webp ساختی از webp استفاده کن؛ اگر نه همین png هم کار می‌کند.
-  const REAL_BG_URL = "/assets/galaxy_bg11.webp";
-  const [bgCss, setBgCss] = useState(PLACEHOLDER_BG);
+
   useEffect(() => {
-    const img = new Image();
-    img.src = REAL_BG_URL;
-    const apply = () =>
-      setBgCss(`url('${REAL_BG_URL}') center/cover no-repeat, ${PLACEHOLDER_BG}`);
-    if (img.decode) img.decode().then(apply).catch(apply);
-    else img.onload = apply;
+    let isMounted = true;
+    (async () => {
+      for (const url of FALLBACKS) {
+        try {
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.src = url;
+            const done = () => resolve();
+            const fail = () => reject();
+            if (img.decode) img.decode().then(done).catch(() => img.complete ? done() : fail());
+            else img.onload = done, img.onerror = fail;
+          });
+          if (!isMounted) return;
+          setBgUrl(url);
+          setBgReady(true);
+          break;
+        } catch {
+          // try next fallback
+        }
+      }
+    })();
+    return () => { isMounted = false; };
   }, []);
 
-  // سرعت‌ها (کمتر = آهسته‌تر)
+  // ---------- Stars (only run after bgReady) ----------
+  // Speeds
   const GATHER_LERP = 0.03;
   const SCATTER_LERP = 0.03;
 
   useEffect(() => {
+    if (!bgReady) return;
+
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
@@ -53,7 +73,6 @@ export default function Login() {
     let mode = "scatter";
     let wobble = false;
 
-    // آفست‌ها: آیکون راست‌تر و امن برای همه‌ی عرض‌ها
     function getOffsets() {
       const isSM = window.innerWidth < 640;
       const textOffX = isSM ? -16 : -10;
@@ -126,23 +145,17 @@ export default function Login() {
       const cy = H / 2 + OFF.iconOffY;
 
       c.fillStyle = "#fff";
-      c.beginPath();
-      c.arc(cx, cy, R, 0, Math.PI * 2);
-      c.fill();
+      c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
       c.globalCompositeOperation = "destination-out";
-      c.beginPath();
-      c.arc(cx, cy, R - ring, 0, Math.PI * 2);
-      c.fill();
+      c.beginPath(); c.arc(cx, cy, R - ring, 0, Math.PI * 2); c.fill();
       c.globalCompositeOperation = "source-over";
 
-      const tcx = cx + R * 0.14;
-      const tcy = cy;
+      const tcx = cx + R * 0.14, tcy = cy;
       c.beginPath();
       c.moveTo(tcx - triW * 0.38, tcy - triH * 0.58);
       c.lineTo(tcx + triW * 0.58, tcy);
       c.lineTo(tcx - triW * 0.38, tcy + triH * 0.58);
-      c.closePath();
-      c.fill();
+      c.closePath(); c.fill();
 
       const gap = window.innerWidth < 640 ? Math.max(3, baseGap - 2) : Math.max(3, baseGap - 3);
       const { data } = c.getImageData(0, 0, W, H);
@@ -168,7 +181,7 @@ export default function Login() {
     }
 
     const STAR_COLOR = "#061E47";
-    const BG_COUNT = innerWidth < 600 ? 140 : 320; // پُرتر
+    const BG_COUNT = innerWidth < 600 ? 140 : 320;
     const TEXT_COUNT = innerWidth < 600 ? 1100 : 2000;
 
     const bgStars = Array.from({ length: BG_COUNT }, () => ({
@@ -265,7 +278,7 @@ export default function Login() {
       Object.values(timersRef.current).forEach(h => (clearInterval(h), clearTimeout(h)));
       document.body.style.overflow = prev;
     };
-  }, []);
+  }, [bgReady]);
 
   // ---- Login Handler ----
   async function handleLogin() {
@@ -301,6 +314,7 @@ export default function Login() {
   const isSmall = typeof window !== "undefined" ? window.innerWidth < 640 : false;
   const formTop = isSmall ? "65%" : "72%";
 
+  // ---------- UI ----------
   return (
     <div
       style={{
@@ -309,98 +323,111 @@ export default function Login() {
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
-        background: bgCss,
-        backgroundColor: "#0a1022",
-        willChange: "background-image",
+        background: bgReady
+          ? `url('${bgUrl}') center/cover no-repeat, ${BASE_GRADIENT}`
+          : BASE_GRADIENT,
+        transition: "background-image .2s ease, opacity .2s ease",
+        opacity: bgReady ? 1 : 1, // (می‌توانست 0.98 باشد؛ ثابت نگه داشتیم)
         zIndex: 0,
         direction: "rtl",
         fontFamily: "Vazirmatn, Vazir, system-ui, sans-serif",
       }}
     >
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          background: "transparent",
-          pointerEvents: "none",
-          zIndex: 10,
-        }}
-      />
+      {/* فقط وقتی بکگراند آماده شد، این‌ها را نشان بده */}
+      {bgReady && (
+        <>
+          <canvas
+            ref={canvasRef}
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              background: "transparent",
+              pointerEvents: "none",
+              zIndex: 10,
+            }}
+          />
 
-      {/* فرم ورود */}
-      <div
-        style={{
-          position: "absolute",
-          top: formTop,
-          left: "50%",
-          transform: "translate(-50%, 0)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          alignItems: "center",
-          width: "min(85vw, 280px)",
-          zIndex: 40,
-        }}
-      >
-        <input
-          placeholder="لطفا نام کاربری خود را وارد کنید"
-          onChange={(e) => setUsername(e.target.value)}
-          value={username}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-          style={{
-            width: "90%",
-            borderRadius: 10,
-            padding: "8px 12px",
-            fontSize: "14px",
-            color: "#00297F",
-            background: "rgba(255,255,255,0.15)",
-            backdropFilter: "blur(8px)",
-            border: "1px solid #00297F",
-            outline: "none",
-            textAlign: "right",
-          }}
-        />
-        <button
-          onClick={handleLogin}
-          style={{
-            alignSelf: "center",
-            borderRadius: 10,
-            padding: "8px 18px",
-            fontSize: "15px",
-            background: "linear-gradient(90deg, #1A83CC 0%, #2CA7E3 100%)",
-            color: "#fff",
-            fontWeight: 700,
-            border: "none",
-            cursor: "pointer",
-            boxShadow: "0 0 10px rgba(26,131,204,0.55)",
-            transition: "box-shadow .25s ease",
-            width: "auto",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 0 16px rgba(26,131,204,0.85)")}
-          onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 0 10px rgba(26,131,204,0.55)")}
-        >
-          ورود
-        </button>
-      </div>
+          {/* فرم ورود */}
+          <div
+            style={{
+              position: "absolute",
+              top: formTop,
+              left: "50%",
+              transform: "translate(-50%, 0)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              alignItems: "center",
+              width: "min(85vw, 280px)",
+              zIndex: 40,
+              animation: "fadeIn .35s ease",
+            }}
+          >
+            <input
+              placeholder="لطفا نام کاربری خود را وارد کنید"
+              onChange={(e) => setUsername(e.target.value)}
+              value={username}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+              style={{
+                width: "90%",
+                borderRadius: 10,
+                padding: "8px 12px",
+                fontSize: "14px",
+                color: "#00297F",
+                background: "rgba(255,255,255,0.15)",
+                backdropFilter: "blur(8px)",
+                border: "1px solid #00297F",
+                outline: "none",
+                textAlign: "right",
+              }}
+            />
+            <button
+              onClick={handleLogin}
+              style={{
+                alignSelf: "center",
+                borderRadius: 10,
+                padding: "8px 18px",
+                fontSize: "15px",
+                background: "linear-gradient(90deg, #1A83CC 0%, #2CA7E3 100%)",
+                color: "#fff",
+                fontWeight: 700,
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 0 10px rgba(26,131,204,0.55)",
+                transition: "box-shadow .25s ease",
+                width: "auto",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 0 16px rgba(26,131,204,0.85)")}
+              onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "0 0 10px rgba(26,131,204,0.55)")}
+            >
+              ورود
+            </button>
+          </div>
 
-      <img
-        src="/assets/nil_logo_vertical.png"
-        alt="Nil Logo"
-        style={{
-          position: "fixed",
-          right: 24,
-          bottom: 24,
-          width: typeof window !== "undefined" && window.innerWidth < 640 ? 110 : 180,
-          opacity: 0.9,
-          pointerEvents: "none",
-          userSelect: "none",
-          zIndex: 50,
-          transition: "width 0.3s ease",
-        }}
-      />
+          <img
+            src="/assets/nil_logo_vertical.png"
+            alt="Nil Logo"
+            style={{
+              position: "fixed",
+              right: 24,
+              bottom: 24,
+              width: typeof window !== "undefined" && window.innerWidth < 640 ? 110 : 180,
+              opacity: 0.9,
+              pointerEvents: "none",
+              userSelect: "none",
+              zIndex: 50,
+              transition: "width 0.3s ease",
+              animation: "fadeIn .5s ease",
+            }}
+          />
+        </>
+      )}
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+      `}</style>
     </div>
   );
 }
