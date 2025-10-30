@@ -8,46 +8,31 @@ export default function Login() {
   const canvasRef = useRef(null);
   const rafRef = useRef(0);
   const timersRef = useRef({});
+
   const [username, setUsername] = useState("");
 
-  // 🔹 حالت لودینگ تا بک‌گراند + اولین فریم انیمیشن آماده شوند
-  const [bgReady, setBgReady] = useState(false);
-  const [animKicked, setAnimKicked] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // --- پس‌زمینه: پِلِیس‌هولدر سریع + سوئیچ به تصویر اصلی بعد از onload ---
+  const PLACEHOLDER_BG =
+    "linear-gradient(180deg, rgba(8,14,34,1) 0%, rgba(12,22,50,1) 50%, rgba(9,17,38,1) 100%)";
+  const REAL_BG_URL = "/assets/galaxy_bg11.png";
+  const [bgCss, setBgCss] = useState(PLACEHOLDER_BG);
+  useEffect(() => {
+    const img = new Image();
+    img.src = REAL_BG_URL;
+    img.onload = () => setBgCss(`url('${REAL_BG_URL}') center/cover no-repeat, ${PLACEHOLDER_BG}`);
+  }, []);
 
   const navigate = useNavigate();
   const { login } = useAuth() || {};
 
   // --- پارامترهای موبایل ---
-  const MOBILE_TEXT_OFFSET_X = -30;
-  const MOBILE_TEXT_OFFSET_Y = -20;
-  const MOBILE_ICON_OFFSET_X = 130;
-  const MOBILE_ICON_OFFSET_Y = 0;
-  const MOBILE_GAP = 3;
-  const MOBILE_ICON_SCALE = 0.79;
-  const MOBILE_FORM_TOP = "65%";
+  const MOBILE_TEXT_OFFSET_X = -16;
+  const MOBILE_TEXT_OFFSET_Y = -18;
+  const MOBILE_ICON_SCALE = 0.9;
 
   // سرعت‌ها (کمتر = آهسته‌تر)
-  const GATHER_LERP = 0.03;
+  const GATHER_LERP = 0.035;
   const SCATTER_LERP = 0.03;
-
-  // 🔸 پیش‌لود تصویر بک‌گراند برای حذف فلیکر
-  useEffect(() => {
-    const img = new Image();
-    img.src = "/assets/galaxy_bg11.png";
-    img.onload = () => setBgReady(true);
-    // اگر به هر دلیلی onload نیامد، بعد از 2.5 ثانیه عبور کن
-    const t = setTimeout(() => setBgReady(true), 2500);
-    return () => clearTimeout(t);
-  }, []);
-
-  // وقتی هر دو شرط حاضر شد، لودینگ محو شود
-  useEffect(() => {
-    if (bgReady && animKicked) {
-      const t = setTimeout(() => setLoading(false), 200); // کمی تاخیر برای فید
-      return () => clearTimeout(t);
-    }
-  }, [bgReady, animKicked]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -56,8 +41,6 @@ export default function Login() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: true });
     const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-
-    let isSM = window.innerWidth < 640;
 
     const fit = () => {
       const w = innerWidth, h = innerHeight;
@@ -69,27 +52,48 @@ export default function Login() {
     };
     fit();
 
+    let isSM = window.innerWidth < 640;
     let mode = "scatter";
     let wobble = false;
 
     const fontSpec = () => {
-      if (innerWidth < 380) return { font: "800 44px system-ui, sans-serif", gap: MOBILE_GAP, lh: 1.15 };
-      if (innerWidth < 640) return { font: "800 56px system-ui, sans-serif", gap: MOBILE_GAP, lh: 1.15 };
+      if (innerWidth < 360) return { font: "800 40px system-ui, sans-serif", gap: 3, lh: 1.15 };
+      if (innerWidth < 640) return { font: "800 56px system-ui, sans-serif", gap: 3, lh: 1.15 };
       if (innerWidth < 1024) return { font: "900 86px system-ui, sans-serif", gap: 7, lh: 1.12 };
       return { font: "900 118px system-ui, sans-serif", gap: 8, lh: 1.1 };
     };
 
-    const TEXT_OFFSET_X = isSM ? MOBILE_TEXT_OFFSET_X : -10;
-    const TEXT_OFFSET_Y = isSM ? MOBILE_TEXT_OFFSET_Y : 0;
-    const ICON_OFFSET_X = isSM ? MOBILE_ICON_OFFSET_X : 320;
-    const ICON_OFFSET_Y = isSM ? MOBILE_ICON_OFFSET_Y : 0;
-
+    // نقاط هدف (متن + آیکون)
     let targets = [];
+    // ذرات متن/آیکون
+    let textStars = [];
+    // ستاره‌های بک‌گراند
+    const STAR_COLOR = "#061E47";
+    const BG_COUNT = innerWidth < 600 ? 80 : 150;
+    const bgStars = Array.from({ length: BG_COUNT }, () => ({
+      x: Math.random() * canvas.width / DPR,
+      y: Math.random() * canvas.height / DPR,
+      r: Math.random() * 1.2 + 0.4,
+    }));
+
+    const getOffsets = () => {
+      // آفست‌ها کَلمپ می‌شوند تا شکل از کادر بیرون نزند
+      const margin = Math.min(40, innerWidth * 0.06);
+      const textOffX = isSM ? MOBILE_TEXT_OFFSET_X : -10;
+      const textOffY = isSM ? MOBILE_TEXT_OFFSET_Y : 0;
+
+      // آیکون در موبایل به جای 130px ثابت، درصدی از عرض با کَلمپ
+      const iconOffX = isSM ? Math.max(60, Math.min(innerWidth * 0.28, 120)) : 320;
+      const iconOffY = 0;
+
+      return { textOffX, textOffY, iconOffX, iconOffY, margin };
+    };
 
     function makeMultilinePoints(lines, font, gap = 3, lineHeight = 1.1) {
-      const off = document.createElement("canvas");
+      const { textOffX, textOffY } = getOffsets();
       const W = Math.min(innerWidth, 1100);
       const H = Math.min(innerHeight, 520);
+      const off = document.createElement("canvas");
       off.width = W; off.height = H;
       const c = off.getContext("2d");
       c.clearRect(0, 0, W, H);
@@ -111,7 +115,7 @@ export default function Login() {
           if (data[a] > 128) {
             const offX = (canvas.width / DPR - W) / 2;
             const offY = (canvas.height / DPR - H) / 2;
-            pts.push({ x: x + offX + TEXT_OFFSET_X, y: y + offY + TEXT_OFFSET_Y });
+            pts.push({ x: x + offX + textOffX, y: y + offY + textOffY });
           }
         }
       }
@@ -119,6 +123,7 @@ export default function Login() {
     }
 
     function makeIconPoints(font, baseGap = 4) {
+      const { textOffX, textOffY, iconOffX, iconOffY } = getOffsets();
       const W = Math.min(innerWidth, 1100);
       const H = Math.min(innerHeight, 520);
       const off = document.createElement("canvas");
@@ -128,14 +133,15 @@ export default function Login() {
 
       const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
       const scale = isSM ? MOBILE_ICON_SCALE : 1;
-      const R = Math.max(34, Math.min(56, em * 0.87 * scale));
+      const R = Math.max(34, Math.min(56, em * 0.9 * scale));
       const ring = Math.max(6, Math.round(R * 0.38));
-      const triW = R * 0.95;
-      const triH = R * 0.95;
+      const triW = R;
+      const triH = R;
 
-      const cx = W / 2 + ICON_OFFSET_X;
-      const cy = H / 2 + ICON_OFFSET_Y;
+      const cx = W / 2 + iconOffX;
+      const cy = H / 2 + iconOffY;
 
+      // حلقه
       c.fillStyle = "#fff";
       c.beginPath();
       c.arc(cx, cy, R, 0, Math.PI * 2);
@@ -146,16 +152,17 @@ export default function Login() {
       c.fill();
       c.globalCompositeOperation = "source-over";
 
+      // مثلث پِلی
       const tcx = cx + R * 0.14;
       const tcy = cy;
       c.beginPath();
       c.moveTo(tcx - triW * 0.38, tcy - triH * 0.58);
-      c.lineTo(tcx + triW * 0.58, tcy);
+      c.lineTo(tcx + triW * 0.62, tcy);
       c.lineTo(tcx - triW * 0.38, tcy + triH * 0.58);
       c.closePath();
       c.fill();
 
-      const gap = isSM ? Math.max(3, baseGap - 3) : Math.max(4, baseGap - 2);
+      const gap = isSM ? Math.max(3, baseGap - 2) : Math.max(4, baseGap - 2);
       const { data } = c.getImageData(0, 0, W, H);
       const pts = [];
       for (let y = 0; y < H; y += gap) {
@@ -164,36 +171,26 @@ export default function Login() {
           if (data[a] > 128) {
             const offX = (canvas.width / DPR - W) / 2;
             const offY = (canvas.height / DPR - H) / 2;
-            pts.push({ x: x + offX + TEXT_OFFSET_X, y: y + offY + TEXT_OFFSET_Y });
+            pts.push({ x: x + offX + textOffX, y: y + offY + textOffY });
           }
         }
       }
       return pts;
     }
 
-    function rebuildTargets() {
+    function rebuildTargetsAndStars() {
       const { font, gap, lh } = fontSpec();
       const textPts = makeMultilinePoints(["NIL", "PLAYER"], font, gap, lh);
       const iconPts = makeIconPoints(font, gap);
       targets = [...textPts, ...iconPts];
+
+      // ✅ تعداد ذرات = دقیقاً تعداد نقاط هدف → همیشه شکل کامل
+      textStars = Array.from({ length: targets.length }, (_, i) => {
+        const hx = Math.random() * canvas.width / DPR;
+        const hy = Math.random() * canvas.height / DPR;
+        return { hx, hy, x: hx, y: hy, r: Math.random() * 1.3 + 0.45, tx: null, ty: null };
+      });
     }
-
-    const STAR_COLOR = "#061E47";
-    const BG_COUNT = innerWidth < 600 ? 80 : 150;
-    const TEXT_COUNT = innerWidth < 600 ? 900 : 1700;
-
-    const bgStars = Array.from({ length: BG_COUNT }, () => ({
-      x: Math.random() * canvas.width / DPR,
-      y: Math.random() * canvas.height / DPR,
-      r: Math.random() * 1.2 + 0.4,
-    }));
-    const textStars = Array.from({ length: TEXT_COUNT }, () => ({
-      hx: Math.random() * canvas.width / DPR,
-      hy: Math.random() * canvas.height / DPR,
-      x: 0, y: 0,
-      r: Math.random() * 1.3 + 0.45,
-      tx: null, ty: null,
-    }));
 
     function resetHomes() {
       for (const s of textStars) {
@@ -203,21 +200,21 @@ export default function Login() {
       }
     }
 
-    rebuildTargets();
+    rebuildTargetsAndStars();
     resetHomes();
 
     const onResize = () => {
       isSM = window.innerWidth < 640;
       fit();
-      rebuildTargets();
+      rebuildTargetsAndStars();
       resetHomes();
     };
     addEventListener("resize", onResize);
 
     function startCycle() {
       mode = "scatter";
-      timersRef.current.g = setTimeout(() => { mode = "gather"; }, 2000);
-      timersRef.current.s = setTimeout(() => { mode = "scatter"; }, 12000);
+      timersRef.current.g = setTimeout(() => { mode = "gather"; }, 1500);
+      timersRef.current.s = setTimeout(() => { mode = "scatter"; }, 11000);
     }
     startCycle();
     timersRef.current.loop = setInterval(startCycle, 12000);
@@ -225,13 +222,11 @@ export default function Login() {
 
     let tick = 0;
     const loop = () => {
-      // اولین فریم که وارد رندر می‌شویم، فلگ انیمیشن را می‌زنیم
-      if (!animKicked) setAnimKicked(true);
-
       tick++;
       const W = canvas.width / DPR, H = canvas.height / DPR;
       ctx.clearRect(0, 0, W, H);
 
+      // بک‌گراند
       for (let i = 0; i < bgStars.length; i++) {
         const s = bgStars[i];
         s.x += (Math.random() - 0.5) * 0.25;
@@ -243,12 +238,12 @@ export default function Login() {
         ctx.fill();
       }
 
+      // متن/آیکون
       ctx.globalAlpha = 0.96;
-      const tLen = targets.length || 1;
       for (let i = 0; i < textStars.length; i++) {
         const s = textStars[i];
-        if (mode === "gather" && tLen) {
-          const t = targets[i % tLen];
+        if (mode === "gather" && targets.length) {
+          const t = targets[i]; // 1-به-1
           const baseTx = t.x, baseTy = t.y;
           if (wobble) {
             const ph = (i % 7) * 0.7 + tick * 0.06;
@@ -279,7 +274,7 @@ export default function Login() {
       Object.values(timersRef.current).forEach(h => (clearInterval(h), clearTimeout(h)));
       document.body.style.overflow = prev;
     };
-  }, [animKicked]);
+  }, []);
 
   // ---- Login Handler ----
   async function handleLogin() {
@@ -313,7 +308,7 @@ export default function Login() {
   }
 
   const isSmall = typeof window !== "undefined" ? window.innerWidth < 640 : false;
-  const formTop = isSmall ? MOBILE_FORM_TOP : "72%";
+  const formTop = isSmall ? "65%" : "72%";
 
   return (
     <div
@@ -323,48 +318,13 @@ export default function Login() {
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
-        backgroundImage: "url('/assets/galaxy_bg11.png')",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundColor: "#0a1022",
+        background: bgCss, // ← پِلِیس‌هولدر → بعداً تصویر اصلی
         zIndex: 0,
         direction: "rtl",
         fontFamily: "Vazirmatn, Vazir, system-ui, sans-serif",
+        transition: "background-image 300ms ease",
       }}
     >
-      {/* لودینگ اورلی */}
-      {loading && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 100,
-            display: "grid",
-            placeItems: "center",
-            background: "rgba(5,8,20,0.65)",
-            backdropFilter: "blur(6px)",
-            transition: "opacity .3s ease",
-          }}
-        >
-          <div style={{ display: "grid", gap: 10, placeItems: "center", color: "#fff" }}>
-            <div
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: "50%",
-                border: "3px solid rgba(255,255,255,.25)",
-                borderTopColor: "#2CA7E3",
-                animation: "spin 0.9s linear infinite",
-              }}
-            />
-            <div style={{ fontWeight: 800, fontSize: 14 }}>در حال بارگذاری…</div>
-          </div>
-          <style>
-            {`@keyframes spin { to { transform: rotate(360deg); } }`}
-          </style>
-        </div>
-      )}
-
       <canvas
         ref={canvasRef}
         style={{
@@ -441,7 +401,7 @@ export default function Login() {
           position: "fixed",
           right: 24,
           bottom: 24,
-          width: window.innerWidth < 640 ? 110 : 180,
+          width: typeof window !== "undefined" && window.innerWidth < 640 ? 110 : 180,
           opacity: 0.9,
           pointerEvents: "none",
           userSelect: "none",
