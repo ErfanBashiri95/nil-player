@@ -19,10 +19,10 @@ export default function Login() {
   const { login } = useAuth() || {};
 
   // --- پارامترهای موبایل ---
-  const MOBILE_TEXT_OFFSET_X = -30;
-  const MOBILE_TEXT_OFFSET_Y = -20;
-  const MOBILE_ICON_OFFSET_X = 130;
-  const MOBILE_ICON_OFFSET_Y = 0;
+  const MOBILE_TEXT_OFFSET_X = -24;
+  const MOBILE_TEXT_OFFSET_Y = -16;
+  const MOBILE_ICON_OFFSET_X = 110;
+  const MOBILE_ICON_OFFSET_Y = 20;
   const MOBILE_GAP = 3;
   const MOBILE_ICON_SCALE = 0.79;
   const MOBILE_FORM_TOP = "65%";
@@ -118,34 +118,42 @@ export default function Login() {
       return pts;
     }
 
+    
     function makeIconPoints(font, baseGap = 4) {
+      // Supersampling برای دقت بالاتر روی موبایل
+      const SS = 2; // اگر روی بعضی گوشی‌ها کند شد، موقتاً 1 کن
       const W = Math.min(innerWidth, 1100);
       const H = Math.min(innerHeight, 520);
+    
       const off = document.createElement("canvas");
-      off.width = W; off.height = H;
+      off.width = Math.floor(W * SS);
+      off.height = Math.floor(H * SS);
       const c = off.getContext("2d");
-      c.clearRect(0, 0, W, H);
-
+      c.clearRect(0, 0, off.width, off.height);
+    
       const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
-      const scale = isSM ? MOBILE_ICON_SCALE : 1;
-      const R = Math.max(34, Math.min(56, em * 0.87 * scale));
-      const ring = Math.max(6, Math.round(R * 0.38));
-      const triW = R * 0.95;
-      const triH = R * 0.95;
-
+      const scale = isSM ? Math.max(0.76, MOBILE_ICON_SCALE) : 1;
+      const R = Math.max(36, Math.min(60, em * 0.9 * scale));
+      const ringWidth = Math.max(8, Math.round(R * 0.42)); // حلقه ضخیم‌تر → نقاط بیشتر
+      const triW = R * 1.02;
+      const triH = R * 1.02;
+    
+      // در بوم های‌رز می‌کشیم ولی با مقیاس SS
+      c.save();
+      c.scale(SS, SS);
+    
+      // حلقه با stroke (به‌جای destination-out)
       const cx = W / 2 + ICON_OFFSET_X;
       const cy = H / 2 + ICON_OFFSET_Y;
-
-      c.fillStyle = "#fff";
       c.beginPath();
       c.arc(cx, cy, R, 0, Math.PI * 2);
-      c.fill();
-      c.globalCompositeOperation = "destination-out";
-      c.beginPath();
-      c.arc(cx, cy, R - ring, 0, Math.PI * 2);
-      c.fill();
-      c.globalCompositeOperation = "source-over";
-
+      c.lineWidth = ringWidth;
+      c.strokeStyle = "#fff";
+      c.lineCap = "round";
+      c.lineJoin = "round";
+      c.stroke();
+    
+      // مثلث پلی
       const tcx = cx + R * 0.14;
       const tcy = cy;
       c.beginPath();
@@ -153,23 +161,36 @@ export default function Login() {
       c.lineTo(tcx + triW * 0.58, tcy);
       c.lineTo(tcx - triW * 0.38, tcy + triH * 0.58);
       c.closePath();
+      c.fillStyle = "#fff";
       c.fill();
-
-      const gap = isSM ? Math.max(3, baseGap - 3) : Math.max(4, baseGap - 2);
-      const { data } = c.getImageData(0, 0, W, H);
+    
+      c.restore();
+    
+      // نمونه‌برداری دقیق‌تر از بوم های‌رز
+      const gap = isSM ? Math.max(2, baseGap - 2) : Math.max(3, baseGap - 1);
+      const { data } = c.getImageData(0, 0, off.width, off.height);
+    
       const pts = [];
+      const canvasW = canvas.width / DPR;
+      const canvasH = canvas.height / DPR;
+      const offX = (canvasW - W) / 2;
+      const offY = (canvasH - H) / 2;
+    
+      const TH = 96; // آستانه پایین‌تر تا لبه‌ها هم شمرده شوند
+    
       for (let y = 0; y < H; y += gap) {
         for (let x = 0; x < W; x += gap) {
-          const a = (y * W + x) * 4 + 3;
-          if (data[a] > 128) {
-            const offX = (canvas.width / DPR - W) / 2;
-            const offY = (canvas.height / DPR - H) / 2;
+          const X = Math.floor(x * SS);
+          const Y = Math.floor(y * SS);
+          const a = (Y * off.width + X) * 4 + 3;
+          if (data[a] > TH) {
             pts.push({ x: x + offX + TEXT_OFFSET_X, y: y + offY + TEXT_OFFSET_Y });
           }
         }
       }
       return pts;
     }
+    
 
     function rebuildTargets() {
       const { font, gap, lh } = fontSpec();
