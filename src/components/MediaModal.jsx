@@ -4,6 +4,25 @@ import { useAuth } from "../context/AuthContext";
 import { validateSecureURL } from "../utils/tokenUtils";
 import { saveProgress, getProgress } from "../utils/progress";
 
+/* --------- Local resume for AUDIO only (separate from DB/video) --------- */
+function audioKey(username, sessionId) {
+  const u = (username || "guest").trim().toLowerCase();
+  return `np_audio::${u}::${sessionId}`;
+}
+function loadAudioResume(username, sessionId) {
+  try {
+    const v = localStorage.getItem(audioKey(username, sessionId));
+    return v ? Math.max(0, Number(v) || 0) : 0;
+  } catch {
+    return 0;
+  }
+}
+function storeAudioResume(username, sessionId, t) {
+  try {
+    localStorage.setItem(audioKey(username, sessionId), String(Math.max(0, Math.floor(t || 0))));
+  } catch {}
+}
+
 export default function MediaModal({
   open, onClose, type, url, title, sessionId, initialTime, courseCode
 }) {
@@ -25,45 +44,48 @@ export default function MediaModal({
   const shouldSend = (now) =>
     now - lastSentRef.current > 5000 ? ((lastSentRef.current = now), true) : false;
 
-  // ---------- helpers: audio resume in localStorage (separate from video/DB) ----------
-  const audioKey = (uname, sid) => `np_audio_resume:${uname || "anon"}:${sid}`;
-  const loadAudioResume = (uname, sid) => {
-    try { return Number(localStorage.getItem(audioKey(uname, sid)) || 0); } catch { return 0; }
-  };
-  const storeAudioResume = (uname, sid, t) => {
-    try { localStorage.setItem(audioKey(uname, sid), String(Math.max(0, Math.floor(t || 0)))); } catch {}
-  };
-
-  // ---------- decide startAt per type ----------
+  // نقطه شروع: اگر initialTime داشتیم همان؛ وگرنه:
+  // برای ویدئو از DB، برای پادکست از localStorage
   const [startAt, setStartAt] = useState(0);
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // اگر initialTime داریم، همان را استفاده کن
       const base = Number(initialTime || 0);
-      if (base > 0) { setStartAt(base); return; }
+      if (base > 0) {
+        if (!cancelled) setStartAt(base);
+        return;
+      }
       if (!open || !sessionId) return;
 
       if (type === "video" && user?.username) {
-        // فقط ویدئو از DB می‌خواند
         const { data } = await getProgress(user.username, sessionId);
         if (!cancelled) setStartAt(Number(data?.last_position || 0));
       } else if (type === "audio") {
-        // پادکست فقط از localStorage
         const t = loadAudioResume(user?.username, sessionId);
         if (!cancelled) setStartAt(t);
       }
     })();
-    return () => { cancelled = true; };
-  }, [open, type, initialTime, user?.username, sessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, initialTime, type, user?.username, sessionId]);
 
-  // ---------- secure check ----------
+  // اگر بعد از لاگین user آماده شد، بدون رفرش برای ویدئو مجدداً startAt را واکشی کن
+  useEffect(() => {
+    if (!open || !user?.username || type !== "video" || !sessionId) return;
+    (async () => {
+      const { data } = await getProgress(user.username, sessionId);
+      if (data?.last_position) setStartAt(Number(data.last_position));
+    })();
+  }, [user?.username, open, type, sessionId]);
+
+  // اعتبار لینک امن
   useEffect(() => {
     if (!open || !url) return;
     setExpired(!validateSecureURL(url));
   }, [url, open]);
 
-  // ---------- watermark (visible every 10s for ~4s) ----------
+  // واترمارک پویا (هر ۱۰ ثانیه)
   useEffect(() => {
     if (!open) return;
     const tick = () => {
@@ -71,20 +93,22 @@ export default function MediaModal({
       const left = Math.floor(Math.random() * 70) + 10;
       setWmPos({ top: `${top}%`, left: `${left}%` });
       setWmVisible(true);
-      setTimeout(() => setWmVisible(false), 4000);
+      setTimeout(() => setWmVisible(false), 3000);
     };
     tick();
     const id = setInterval(tick, 10000);
     return () => clearInterval(id);
   }, [open]);
 
-  // ---------- screen-capture guard (best-effort) ----------
+  // ضد ضبط صفحه
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const isCapturing = devices.some(d => d.kind === "videoinput" && d.label.includes("Screen"));
+        const isCapturing = devices.some(
+          (d) => d.kind === "videoinput" && d.label.includes("Screen")
+        );
         setWarning(isCapturing);
         if (isCapturing && videoRef.current) videoRef.current.pause();
       } catch {}
@@ -92,14 +116,14 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // ---------- ESC close ----------
+  // ESC برای بستن
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // ========== VIDEO (HLS + DB progress & resume) ==========
+  /* ===================== VIDEO (HLS + DB progress) ===================== */
   useEffect(() => {
     if (!open || type !== "video") return;
     const video = videoRef.current;
@@ -108,7 +132,12 @@ export default function MediaModal({
     const isHls = typeof url === "string" && url.includes(".m3u8");
 
     const cleanup = () => {
-      if (hlsRef.current) { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+        } catch {}
+        hlsRef.current = null;
+      }
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("pause", onPause);
@@ -118,9 +147,16 @@ export default function MediaModal({
 
     const jumpToStart = () => {
       if (startAt && video.readyState >= 1) {
-        try { video.currentTime = startAt; } catch {}
+        try {
+          video.currentTime = startAt;
+        } catch {}
       } else {
-        const once = () => { try { video.currentTime = startAt || 0; } catch {} video.removeEventListener("loadedmetadata", once); };
+        const once = () => {
+          try {
+            video.currentTime = startAt || 0;
+          } catch {}
+          video.removeEventListener("loadedmetadata", once);
+        };
         video.addEventListener("loadedmetadata", once);
       }
     };
@@ -129,9 +165,11 @@ export default function MediaModal({
       const d = video.duration || 0;
       setDuration(d);
       jumpToStart();
-      // ثبتِ اولیه برای ویدئو
+      // فقط ویدئو: ذخیره اولیه
       saveProgress({
-        username: user?.username, courseCode, sessionId,
+        username: user?.username,
+        courseCode,
+        sessionId,
         lastPosition: startAt || 0,
         watchedSeconds: startAt || 0,
         totalSeconds: d,
@@ -145,9 +183,10 @@ export default function MediaModal({
       const d = video.duration || duration || 0;
       setMaxSeen((prev) => Math.max(prev, t));
       if (shouldSend(performance.now())) {
-        // فقط ویدئو: درصد/پیشرفت به DB
         saveProgress({
-          username: user?.username, courseCode, sessionId,
+          username: user?.username,
+          courseCode,
+          sessionId,
           lastPosition: t,
           watchedSeconds: Math.max(maxSeen, t),
           totalSeconds: d,
@@ -160,7 +199,9 @@ export default function MediaModal({
       const t = video.currentTime || 0;
       const d = video.duration || duration || 0;
       saveProgress({
-        username: user?.username, courseCode, sessionId,
+        username: user?.username,
+        courseCode,
+        sessionId,
         lastPosition: t,
         watchedSeconds: Math.max(maxSeen, t),
         totalSeconds: d,
@@ -171,7 +212,9 @@ export default function MediaModal({
     const onEnded = () => {
       const d = video.duration || duration || 0;
       saveProgress({
-        username: user?.username, courseCode, sessionId,
+        username: user?.username,
+        courseCode,
+        sessionId,
         lastPosition: d,
         watchedSeconds: d,
         totalSeconds: d,
@@ -183,7 +226,9 @@ export default function MediaModal({
       const t = video.currentTime || 0;
       const d = video.duration || duration || 0;
       saveProgress({
-        username: user?.username, courseCode, sessionId,
+        username: user?.username,
+        courseCode,
+        sessionId,
         lastPosition: t,
         watchedSeconds: Math.max(maxSeen, t),
         totalSeconds: d,
@@ -199,7 +244,11 @@ export default function MediaModal({
 
     if (isHls) {
       if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 60 });
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 60,
+        });
         hlsRef.current = hls;
         hls.attachMedia(video);
         hls.loadSource(url);
@@ -217,10 +266,10 @@ export default function MediaModal({
     }
 
     return cleanup;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
 
-  // ========== AUDIO (HLS + localStorage resume ONLY; NO DB progress) ==========
+  /* ===================== AUDIO (HLS + local resume only) ===================== */
   useEffect(() => {
     if (!open || type !== "audio") return;
     const el = audioRef.current;
@@ -229,24 +278,37 @@ export default function MediaModal({
     const isHls = typeof url === "string" && url.includes(".m3u8");
 
     const cleanup = () => {
-      if (hlsRef.current) { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
+      if (hlsRef.current) {
+        try {
+          hlsRef.current.destroy();
+        } catch {}
+        hlsRef.current = null;
+      }
       el.removeEventListener("loadedmetadata", onLoaded);
+      el.removeEventListener("canplay", onCanPlay);
       el.removeEventListener("timeupdate", onTime);
       el.removeEventListener("pause", onPause);
       el.removeEventListener("ended", onEnded);
     };
 
     const onLoaded = () => {
-      const d = el.duration || 0;
-      setDuration(d);
-      // فقط از localStorage Resume کن
-      const resumeAt = startAt > 0 ? startAt : loadAudioResume(user?.username, sessionId);
-      if (resumeAt > 0) { try { el.currentTime = resumeAt; } catch {} }
+      setDuration(el.duration || 0);
     };
 
+    // فقط وقتی duration معلوم شد، resume کن
+    const onCanPlay = () => {
+      const d = el.duration || 0;
+      const resumeAt = loadAudioResume(user?.username, sessionId);
+      if (resumeAt > 0 && d > 0 && resumeAt < d - 2) {
+        try {
+          el.currentTime = resumeAt;
+        } catch {}
+      }
+    };
+
+    // هر بار تغییر زمان، آخرین ثانیه را محلی ذخیره کن
     const onTime = () => {
       const t = el.currentTime || 0;
-      // فقط localStorage — هیچ ذخیره‌ای در DB برای پادکست انجام نشود
       storeAudioResume(user?.username, sessionId, t);
     };
 
@@ -256,12 +318,12 @@ export default function MediaModal({
     };
 
     const onEnded = () => {
-      // می‌تونی در پایان هم آخرین زمان را صفر کنی یا همان آخر را نگه داری
-      const d = el.duration || 0;
-      storeAudioResume(user?.username, sessionId, d);
+      // اگر کامل گوش شد، صفر کن تا دفعه بعد از ابتدا بیاید
+      storeAudioResume(user?.username, sessionId, 0);
     };
 
     el.addEventListener("loadedmetadata", onLoaded);
+    el.addEventListener("canplay", onCanPlay);
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("pause", onPause);
     el.addEventListener("ended", onEnded);
@@ -273,18 +335,18 @@ export default function MediaModal({
         hls.attachMedia(el);
         hls.loadSource(url);
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
-        el.src = url; // Safari
+        el.src = url;
       } else {
         console.warn("HLS not supported for audio.");
         el.src = "";
       }
     } else {
-      el.src = url; // MP3/AAC مستقیم
+      el.src = url;
     }
 
     return cleanup;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, type, url, sessionId, user?.username]);
 
   const applyRate = (r) => {
     setPlaybackRate(r);
@@ -299,8 +361,9 @@ export default function MediaModal({
       <div onClick={onClose} style={S.overlay}>
         <div style={{ textAlign: "center", color: "#fff" }}>
           <h3 style={{ margin: 0, fontWeight: 800 }}>⏱ لینک منقضی شده است</h3>
-          <p style={{ opacity: 0.75, marginTop: 8 }}>لطفاً صفحه را رفرش کنید و دوباره تلاش نمایید.</p>
-          <button onClick={onClose} style={S.primaryBtn}>بستن</button>
+          <p style={{ opacity: 0.75, marginTop: 8 }}>
+            لطفاً صفحه را رفرش کنید و دوباره تلاش نمایید.
+          </p>
         </div>
       </div>
     );
@@ -329,20 +392,29 @@ export default function MediaModal({
   return (
     <div
       className="media-modal-overlay"
-      onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()}
+      onClick={(e) =>
+        e.target.classList.contains("media-modal-overlay") && onClose()
+      }
       style={S.overlay}
     >
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
-        {/* header */}
+        {/* Header */}
         <div style={S.header}>
           <div style={S.headLeft}>
-            <div style={S.mediaBadge}>{type === "video" ? "🎬 ویدئو" : "🎧 پادکست"}</div>
-            <h3 style={S.title} title={title}>{title}</h3>
+            <div style={S.mediaBadge}>
+              {type === "video" ? "🎬 ویدئو" : "🎧 پادکست"}
+            </div>
+            <h3 style={S.title} title={title}>
+              {title}
+            </h3>
           </div>
-          <button onClick={onClose} aria-label="بستن" style={S.closeBtn}>×</button>
+          {/* فقط بستن ساده؛ بدون تغییر چیدمان */}
+          <button onClick={onClose} aria-label="بستن" style={S.closeBtn}>
+            ×
+          </button>
         </div>
 
-        {/* body */}
+        {/* Body */}
         {type === "video" ? (
           <div style={{ position: "relative" }}>
             <video
@@ -357,37 +429,42 @@ export default function MediaModal({
               style={S.video}
             />
 
-            {/* watermark */}
+            {/* Watermark */}
             {user?.username && (
               <div
                 style={{
                   position: "absolute",
                   ...wmPos,
-                  zIndex: 3,
-                  opacity: wmVisible ? 0.45 : 0,
-                  transform: wmVisible ? "scale(1)" : "scale(0.98)",
-                  transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
+                  opacity: wmVisible ? 0.4 : 0,
+                  transform: wmVisible ? "scale(1)" : "scale(0.96)",
+                  transition:
+                    "opacity .6s ease, transform .6s ease, top .6s, left .6s",
                   color: "#fff",
-                  fontWeight: 800,
+                  fontWeight: 700,
                   fontSize: "clamp(12px, 1.8vw, 16px)",
                   pointerEvents: "none",
                   userSelect: "none",
-                  textShadow: "0 0 10px rgba(0,0,0,0.7)",
+                  textShadow: "0 0 10px rgba(0,0,0,.7)",
                 }}
               >
-                {`${user.username} • ${new Date().toLocaleDateString("fa-IR")} • ${new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}
+                {`${user.username} • ${new Date().toLocaleTimeString("fa-IR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  second: "2-digit",
+                })}`}
               </div>
             )}
 
-            {/* capture warning */}
+            {/* Screen-record warning */}
             {warning && (
               <div style={S.warn}>
                 ⚠️ ضبط صفحه شناسایی شد!
-                <br />لطفاً ضبط را متوقف کنید.
+                <br />
+                لطفاً ضبط را متوقف کنید.
               </div>
             )}
 
-            {/* playback rate */}
+            {/* Playback rate */}
             <div style={S.fabRate}>
               <select
                 value={playbackRate}
@@ -395,7 +472,9 @@ export default function MediaModal({
                 style={S.fabSelect}
               >
                 {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
-                  <option key={s} value={s}>{s}x</option>
+                  <option key={s} value={s}>
+                    {s}x
+                  </option>
                 ))}
               </select>
             </div>
@@ -415,7 +494,7 @@ export default function MediaModal({
         )}
       </div>
 
-      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      <style>{`@keyframes fadeIn {from{opacity:0} to{opacity:1}}`}</style>
     </div>
   );
 }
@@ -423,18 +502,25 @@ export default function MediaModal({
 /* ---------- styles ---------- */
 const S = {
   overlay: {
-    position: "fixed", inset: 0,
-    background: "radial-gradient(120% 120% at 50% 20%, rgba(10,14,30,.85), rgba(4,6,14,.75))",
+    position: "fixed",
+    inset: 0,
+    background:
+      "radial-gradient(120% 120% at 50% 20%, rgba(10,14,30,.85), rgba(4,6,14,.75))",
     backdropFilter: "blur(10px)",
     WebkitBackdropFilter: "blur(10px)",
     zIndex: 999,
-    display: "flex", alignItems: "center", justifyContent: "center",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     animation: "fadeIn .25s ease",
   },
   card: {
     width: "min(680px, 92vw)",
-    ...(typeof window !== "undefined" && window.innerWidth < 520 ? { width: "min(520px, 94vw)" } : {}),
-    background: "linear-gradient(180deg, rgba(20,25,45,.78), rgba(16,20,38,.92))",
+    ...(typeof window !== "undefined" && window.innerWidth < 520
+      ? { width: "min(520px, 94vw)" }
+      : {}),
+    background:
+      "linear-gradient(180deg, rgba(20,25,45,.78), rgba(16,20,38,.92))",
     borderRadius: 20,
     padding: 16,
     position: "relative",
@@ -461,39 +547,64 @@ const S = {
     whiteSpace: "nowrap",
   },
   title: {
-    margin: 0, fontSize: 16, fontWeight: 800, overflow: "hidden",
-    textOverflow: "ellipsis", whiteSpace: "nowrap",
-    opacity: .95,
+    margin: 0,
+    fontSize: 16,
+    fontWeight: 800,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    opacity: 0.95,
   },
   closeBtn: {
-    width: 36, height: 36,
-    display: "grid", placeItems: "center",
-    borderRadius: 999, border: "1px solid rgba(255,255,255,.18)",
+    width: 36,
+    height: 36,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 999,
+    border: "1px solid rgba(255,255,255,.18)",
     background: "rgba(255,255,255,.06)",
-    color: "#fff", fontSize: 20, cursor: "pointer",
+    color: "#fff",
+    fontSize: 20,
+    cursor: "pointer",
     boxShadow: "0 4px 14px rgba(0,0,0,.35)",
   },
   video: {
-    width: "100%", borderRadius: 14, background: "#000",
+    width: "100%",
+    borderRadius: 14,
+    background: "#000",
     outline: "1px solid rgba(255,255,255,.06)",
   },
   warn: {
-    position: "absolute", inset: 0,
-    background: "rgba(0,0,0,.75)", color: "#ff5a5a",
-    fontWeight: 800, fontSize: "clamp(14px, 2vw, 18px)",
-    display: "flex", alignItems: "center", justifyContent: "center",
-    textAlign: "center", zIndex: 10, backdropFilter: "blur(8px)",
+    position: "absolute",
+    inset: 0,
+    background: "rgba(0,0,0,.75)",
+    color: "#ff5a5a",
+    fontWeight: 800,
+    fontSize: "clamp(14px, 2vw, 18px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    zIndex: 10,
+    backdropFilter: "blur(8px)",
   },
   fabRate: {
-    position: "absolute", top: 10, right: 10,
+    position: "absolute",
+    top: 10,
+    right: 10,
     background: "rgba(0,0,0,.45)",
     border: "1px solid rgba(255,255,255,.22)",
-    borderRadius: 12, padding: "2px 6px",
+    borderRadius: 12,
+    padding: "2px 6px",
     boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
   fabSelect: {
-    background: "transparent", color: "#0B1A3A",
-    border: "none", fontSize: 13, outline: "none", cursor: "pointer",
+    background: "transparent",
+    color: "#0B1A3A",
+    border: "none",
+    fontSize: 13,
+    outline: "none",
+    cursor: "pointer",
   },
   audioBox: {
     background: "rgba(255,255,255,.05)",
@@ -501,14 +612,15 @@ const S = {
     borderRadius: 14,
     padding: 12,
   },
-  audio: {
-    width: "100%", accentColor: "#1A83CC",
-    filter: "saturate(1.05)",
-  },
+  audio: { width: "100%", accentColor: "#1A83CC", filter: "saturate(1.05)" },
   pillsRow: {
-    display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    marginTop: 10,
+    flexWrap: "wrap",
   },
-  pillsLabel: { fontSize: 13, opacity: .9, whiteSpace: "nowrap" },
+  pillsLabel: { fontSize: 13, opacity: 0.9, whiteSpace: "nowrap" },
   pillsWrap: { display: "flex", gap: 6, flexWrap: "wrap" },
   pill: {
     padding: "6px 10px",
@@ -516,17 +628,13 @@ const S = {
     background: "rgba(255,255,255,.08)",
     border: "1px solid rgba(255,255,255,.18)",
     color: "#fff",
-    fontSize: 12.5, fontWeight: 800,
+    fontSize: 12.5,
+    fontWeight: 800,
     cursor: "pointer",
   },
   pillActive: {
     background: "linear-gradient(90deg,#1A83CC,#2CA7E3)",
     borderColor: "rgba(255,255,255,.35)",
     boxShadow: "0 6px 16px rgba(26,131,204,.35)",
-  },
-  primaryBtn: {
-    marginTop: 16, padding: "8px 14px",
-    background: "#1A83CC", color: "#fff",
-    borderRadius: 10, border: "none", cursor: "pointer",
   },
 };
