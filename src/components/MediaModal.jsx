@@ -65,6 +65,51 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
     }
   }, [open, type, initialTime]);
 
+  // پشتیبانی از HLS (m3u8) با hls.js در مرورگرهای غیر-Safari
+  useEffect(() => {
+    if (!open || type !== "video" || !url) return;
+
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    let hlsInstance = null;
+
+    (async () => {
+      // اگر مرورگر به صورت Native پخش کند (Safari/iOS)
+      if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
+        videoEl.src = url;
+        videoEl.load();
+        return;
+      }
+      // سایر مرورگرها → hls.js
+      const { default: Hls } = await import("hls.js");
+      if (Hls.isSupported()) {
+        hlsInstance = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          backBufferLength: 90,
+        });
+        hlsInstance.loadSource(url);
+        hlsInstance.attachMedia(videoEl);
+      } else {
+        // fallback بسیار نادر
+        videoEl.src = url;
+        videoEl.load();
+      }
+    })();
+
+    return () => {
+      try {
+        if (hlsInstance) hlsInstance.destroy();
+        if (videoEl) {
+          videoEl.pause();
+          videoEl.removeAttribute("src");
+          videoEl.load();
+        }
+      } catch {}
+    };
+  }, [open, type, url]);
+
   const applyRate = (r) => {
     setPlaybackRate(r);
     if (videoRef.current) videoRef.current.playbackRate = r;
@@ -125,10 +170,11 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
           <div style={{ position: "relative" }}>
             <video
               ref={videoRef}
-              src={url}
+              // src را عمداً نمی‌گذاریم؛ در useEffect ست می‌شود (native یا hls.js)
               controls
               playsInline
               autoPlay
+              crossOrigin="anonymous"
               controlsList="nodownload noremoteplayback"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
