@@ -197,7 +197,7 @@ export default function Helix02() {
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 4,
-                        fontSize: isMobile ? 1 : 18,
+                        fontSize: isMobile ? 0.5 : 18,
                       }}
                     >
                       <span
