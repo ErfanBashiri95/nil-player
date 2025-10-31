@@ -12,165 +12,279 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth() || {};
 
-  const MOBILE_FORM_TOP = "65%";
-  const STAR_COLOR = "#ffffff"; // ستاره‌های سفید
+  // ---------- BACKGROUND ----------
+  const FALLBACKS = ["/assets/galaxy_bg11.png", "/assets/galaxy_bg11.webp", "/assets/galaxy_bg11.jpg"];
+  const [bgUrl, setBgUrl] = useState("");
+  const BASE_GRADIENT =
+    "linear-gradient(180deg, rgba(8,14,34,1) 0%, rgba(12,22,50,1) 50%, rgba(9,17,38,1) 100%)";
 
-  // بکگراند سریع
   useEffect(() => {
-    const link = document.createElement("link");
-    link.rel = "preload";
-    link.as = "image";
-    link.href = "/assets/galaxy_bg11.png";
-    document.head.appendChild(link);
-    return () => document.head.removeChild(link);
+    let loaded = false;
+    (async () => {
+      for (const url of FALLBACKS) {
+        try {
+          await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.src = url;
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+          if (!loaded) {
+            loaded = true;
+            setBgUrl(url);
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      if (!loaded) setBgUrl(FALLBACKS[0]); // fallback در صورت شکست همه
+    })();
   }, []);
 
+  const GATHER_LERP = 0.03;
+  const SCATTER_LERP = 0.03;
+
   useEffect(() => {
+    if (!bgUrl) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: true });
     const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
     const fit = () => {
-      const w = innerWidth;
-      const h = innerHeight;
+      const w = innerWidth, h = innerHeight;
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
-      canvas.width = w * DPR;
-      canvas.height = h * DPR;
+      canvas.width = Math.floor(w * DPR);
+      canvas.height = Math.floor(h * DPR);
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     };
     fit();
-    addEventListener("resize", fit);
 
-    const { innerWidth: W, innerHeight: H } = window;
-    const font =
-      W < 380
-        ? "800 44px system-ui, sans-serif"
-        : W < 640
-        ? "800 56px system-ui, sans-serif"
-        : W < 1024
-        ? "900 86px system-ui, sans-serif"
-        : "900 118px system-ui, sans-serif";
-    const gap = W < 640 ? 3 : 6;
-    const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
-    const lh = 1.1;
+    let mode = "scatter";
+    let wobble = false;
 
-    // ساخت نقاط متن
-    const off = document.createElement("canvas");
-    off.width = W;
-    off.height = H;
-    const c = off.getContext("2d");
-    c.fillStyle = "#fff";
-    c.textAlign = "center";
-    c.textBaseline = "middle";
-    c.font = font;
-    const lines = ["NIL", "PLAYER"];
-    const totalH = em * lh * (lines.length - 1);
-    const centerY = H / 2 - totalH / 2;
-    lines.forEach((t, i) => c.fillText(t, W / 2, centerY + i * em * lh));
+    function getOffsets() {
+      const isSM = window.innerWidth < 640;
+      const textOffX = isSM ? -16 : -10;
+      const textOffY = isSM ? -18 : 0;
+      const iconOffX = isSM
+        ? Math.max(80, Math.min(window.innerWidth * 0.32, 160))
+        : Math.min(360, window.innerWidth * 0.24 + 120);
+      const iconOffY = 0;
+      return { textOffX, textOffY, iconOffX, iconOffY };
+    }
+    let OFF = getOffsets();
 
-    // ساخت آیکون دقیق (نسخه قبل از تغییرات)
-    const R = Math.max(34, Math.min(56, em * 0.87));
-    const ring = Math.round(R * 0.38);
-    const triW = R * 0.95;
-    const triH = R * 0.95;
-    const cx = W / 2 + (W < 640 ? 130 : 320);
-    const cy = H / 2;
+    const fontSpec = () => {
+      if (innerWidth < 360) return { font: "800 40px system-ui, sans-serif", gap: 3, lh: 1.15 };
+      if (innerWidth < 640) return { font: "800 56px system-ui, sans-serif", gap: 3, lh: 1.15 };
+      if (innerWidth < 1024) return { font: "900 86px system-ui, sans-serif", gap: 6, lh: 1.12 };
+      return { font: "900 118px system-ui, sans-serif", gap: 6, lh: 1.1 };
+    };
 
-    c.beginPath();
-    c.arc(cx, cy, R, 0, Math.PI * 2);
-    c.fill();
-    c.globalCompositeOperation = "destination-out";
-    c.beginPath();
-    c.arc(cx, cy, R - ring, 0, Math.PI * 2);
-    c.fill();
-    c.globalCompositeOperation = "source-over";
-    const tcx = cx + R * 0.14;
-    c.beginPath();
-    c.moveTo(tcx - triW * 0.38, cy - triH * 0.58);
-    c.lineTo(tcx + triW * 0.58, cy);
-    c.lineTo(tcx - triW * 0.38, cy + triH * 0.58);
-    c.closePath();
-    c.fill();
+    let targets = [];
 
-    const data = c.getImageData(0, 0, W, H).data;
-    const points = [];
-    for (let y = 0; y < H; y += gap) {
-      for (let x = 0; x < W; x += gap) {
-        const a = (y * W + x) * 4 + 3;
-        if (data[a] > 128) points.push({ x, y });
+    function makeMultilinePoints(lines, font, gap = 3, lineHeight = 1.1) {
+      const off = document.createElement("canvas");
+      const W = Math.min(innerWidth, 1100);
+      const H = Math.min(innerHeight, 520);
+      off.width = W; off.height = H;
+      const c = off.getContext("2d");
+      c.clearRect(0, 0, W, H);
+      c.fillStyle = "#fff";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      c.font = font;
+
+      const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
+      const totalH = em * lineHeight * (lines.length - 1);
+      const centerY = H / 2 - totalH / 2;
+      lines.forEach((t, i) => c.fillText(t, W / 2, centerY + i * em * lineHeight));
+
+      const { data } = c.getImageData(0, 0, W, H);
+      const pts = [];
+      for (let y = 0; y < H; y += gap) {
+        for (let x = 0; x < W; x += gap) {
+          const a = (y * W + x) * 4 + 3;
+          if (data[a] > 128) {
+            const offX = (canvas.width / DPR - W) / 2;
+            const offY = (canvas.height / DPR - H) / 2;
+            pts.push({ x: x + offX + OFF.textOffX, y: y + offY + OFF.textOffY });
+          }
+        }
+      }
+      return pts;
+    }
+
+    function makeIconPoints(font, baseGap = 4) {
+      const W = Math.min(innerWidth, 1100);
+      const H = Math.min(innerHeight, 520);
+      const off = document.createElement("canvas");
+      off.width = W; off.height = H;
+      const c = off.getContext("2d");
+      c.clearRect(0, 0, W, H);
+
+      const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
+      const scale = window.innerWidth < 640 ? 0.79 : 1;
+      const R = Math.max(34, Math.min(56, em * 0.87 * scale));
+      const ring = Math.max(6, Math.round(R * 0.38));
+      const triW = R * 0.95;
+      const triH = R * 0.95;
+      const cx = W / 2 + OFF.iconOffX;
+      const cy = H / 2 + OFF.iconOffY;
+
+      c.fillStyle = "#fff";
+      c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
+      c.globalCompositeOperation = "destination-out";
+      c.beginPath(); c.arc(cx, cy, R - ring, 0, Math.PI * 2); c.fill();
+      c.globalCompositeOperation = "source-over";
+      const tcx = cx + R * 0.14, tcy = cy;
+      c.beginPath();
+      c.moveTo(tcx - triW * 0.38, tcy - triH * 0.58);
+      c.lineTo(tcx + triW * 0.58, tcy);
+      c.lineTo(tcx - triW * 0.38, tcy + triH * 0.58);
+      c.closePath(); c.fill();
+
+      const gap = window.innerWidth < 640 ? Math.max(3, baseGap - 2) : Math.max(3, baseGap - 3);
+      const { data } = c.getImageData(0, 0, W, H);
+      const pts = [];
+      for (let y = 0; y < H; y += gap) {
+        for (let x = 0; x < W; x += gap) {
+          const a = (y * W + x) * 4 + 3;
+          if (data[a] > 128) {
+            const offX = (canvas.width / DPR - W) / 2;
+            const offY = (canvas.height / DPR - H) / 2;
+            pts.push({ x: x + offX + OFF.textOffX, y: y + offY + OFF.textOffY });
+          }
+        }
+      }
+      return pts;
+    }
+
+    function rebuildTargets() {
+      const { font, gap, lh } = fontSpec();
+      const textPts = makeMultilinePoints(["NIL", "PLAYER"], font, gap, lh);
+      const iconPts = makeIconPoints(font, gap);
+      targets = [...textPts, ...iconPts];
+    }
+
+    // ⭐ ستاره‌های سفید
+    const STAR_COLOR = "#FFFFFF";
+    const BG_COUNT = innerWidth < 600 ? 140 : 320;
+    const TEXT_COUNT = innerWidth < 600 ? 1100 : 2000;
+
+    const bgStars = Array.from({ length: BG_COUNT }, () => ({
+      x: Math.random() * canvas.width / DPR,
+      y: Math.random() * canvas.height / DPR,
+      r: Math.random() * 1.2 + 0.4,
+    }));
+    const textStars = Array.from({ length: TEXT_COUNT }, () => ({
+      hx: Math.random() * canvas.width / DPR,
+      hy: Math.random() * canvas.height / DPR,
+      x: 0, y: 0,
+      r: Math.random() * 1.3 + 0.45,
+      tx: null, ty: null,
+    }));
+
+    function resetHomes() {
+      for (const s of textStars) {
+        s.hx = Math.random() * canvas.width / DPR;
+        s.hy = Math.random() * canvas.height / DPR;
+        if (mode === "scatter") { s.x = s.hx; s.y = s.hy; }
       }
     }
 
-    // ستاره‌ها
-    const stars = Array.from({ length: 1400 }, () => ({
-      x: Math.random() * W,
-      y: Math.random() * H,
-      r: Math.random() * 1.2 + 0.4,
-      tx: 0,
-      ty: 0,
-    }));
+    rebuildTargets();
+    resetHomes();
+
+    const onResize = () => {
+      fit();
+      OFF = getOffsets();
+      rebuildTargets();
+      resetHomes();
+    };
+    addEventListener("resize", onResize);
+
+    function startCycle() {
+      mode = "scatter";
+      timersRef.current.g = setTimeout(() => { mode = "gather"; }, 2000);
+      timersRef.current.s = setTimeout(() => { mode = "scatter"; }, 12000);
+    }
+    startCycle();
+    timersRef.current.loop = setInterval(startCycle, 12000);
+    timersRef.current.wob = setInterval(() => { wobble = !wobble; }, 2000);
 
     let tick = 0;
     const loop = () => {
       tick++;
+      const W = canvas.width / DPR, H = canvas.height / DPR;
       ctx.clearRect(0, 0, W, H);
-      ctx.globalAlpha = 1;
 
-      // بکگراند ستاره‌ها
-      for (let i = 0; i < 150; i++) {
-        const s = stars[i];
+      for (let i = 0; i < bgStars.length; i++) {
+        const s = bgStars[i];
+        s.x += (Math.random() - 0.5) * 0.25;
+        s.y += (Math.random() - 0.5) * 0.25;
+        ctx.globalAlpha = 0.8 + Math.sin((i + tick) * 0.03) * 0.2;
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
         ctx.fillStyle = STAR_COLOR;
         ctx.fill();
       }
 
-      // متن و آیکون
-      const len = points.length;
-      for (let i = 0; i < stars.length; i++) {
-        const s = stars[i];
-        const t = points[i % len];
-        s.x += (t.x - s.x) * 0.03;
-        s.y += (t.y - s.y) * 0.03;
+      ctx.globalAlpha = 0.96;
+      const tLen = targets.length || 1;
+      for (let i = 0; i < textStars.length; i++) {
+        const s = textStars[i];
+        if (mode === "gather" && tLen) {
+          const t = targets[i % tLen];
+          const baseTx = t.x, baseTy = t.y;
+          if (wobble) {
+            const ph = (i % 7) * 0.7 + tick * 0.06;
+            s.tx = baseTx + Math.sin(ph) * 1.2;
+            s.ty = baseTy + Math.cos(ph) * 1.2;
+          } else {
+            s.tx = baseTx; s.ty = baseTy;
+          }
+          s.x += (s.tx - s.x) * GATHER_LERP;
+          s.y += (s.ty - s.y) * GATHER_LERP;
+        } else {
+          s.x += (s.hx - s.x) * SCATTER_LERP;
+          s.y += (s.hy - s.y) * SCATTER_LERP;
+        }
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
         ctx.fillStyle = STAR_COLOR;
         ctx.fill();
       }
 
-      requestAnimationFrame(loop);
+      rafRef.current = requestAnimationFrame(loop);
     };
-    loop();
+    rafRef.current = requestAnimationFrame(loop);
 
-    return () => removeEventListener("resize", fit);
-  }, []);
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+      removeEventListener("resize", onResize);
+      Object.values(timersRef.current).forEach(h => (clearInterval(h), clearTimeout(h)));
+      document.body.style.overflow = prev;
+    };
+  }, [bgUrl]);
 
   async function handleLogin() {
-    const id = (username || "").trim().toLowerCase();
+    const id = username.trim().toLowerCase();
     if (!id) return;
-    try {
-      if (typeof login === "function") {
-        const u = await login(id);
-        const code = (u?.course_code || "").toUpperCase();
-        navigate(code === "HELIX02" ? "/helix02" : "/helix01", { replace: true });
-        return;
-      }
-    } catch {}
-    const found = allowed.find((u) => (u.username || "").trim().toLowerCase() === id);
+    const found = allowed.find((u) => u.username.trim().toLowerCase() === id);
     if (!found) return alert("یوزرنیم مجاز نیست.");
-    const userObj = {
-      id: found.username,
-      name: found.username,
-      username: found.username,
-      course_code: (found.course_code || "").toUpperCase(),
-    };
+    const userObj = { username: found.username, course_code: found.course_code.toUpperCase() };
     localStorage.setItem("nil_auth", JSON.stringify(userObj));
-    navigate(userObj.course_code === "HELIX02" ? "/helix02" : "/helix01", { replace: true });
+    navigate(userObj.course_code === "HELIX02" ? "/helix02" : "/helix01");
   }
 
   const isSmall = window.innerWidth < 640;
-  const formTop = isSmall ? MOBILE_FORM_TOP : "72%";
+  const formTop = isSmall ? "65%" : "72%";
 
   return (
     <div
@@ -179,13 +293,12 @@ export default function Login() {
         inset: 0,
         width: "100vw",
         height: "100vh",
-        backgroundImage: "url('/assets/galaxy_bg11.png')",
-        backgroundRepeat: "no-repeat",
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        backgroundColor: "#0a1022",
+        overflow: "hidden",
+        background: bgUrl
+          ? `url('${bgUrl}') center/cover no-repeat, ${BASE_GRADIENT}`
+          : BASE_GRADIENT,
+        zIndex: 0,
         direction: "rtl",
-        fontFamily: "Vazirmatn, system-ui, sans-serif",
       }}
     >
       <canvas
@@ -195,7 +308,6 @@ export default function Login() {
           inset: 0,
           width: "100%",
           height: "100%",
-          background: "transparent",
           pointerEvents: "none",
         }}
       />
@@ -208,6 +320,7 @@ export default function Login() {
           transform: "translate(-50%, 0)",
           display: "flex",
           flexDirection: "column",
+          gap: 10,
           alignItems: "center",
           width: "min(85vw, 280px)",
         }}
@@ -231,7 +344,6 @@ export default function Login() {
         <button
           onClick={handleLogin}
           style={{
-            marginTop: 10,
             borderRadius: 10,
             padding: "8px 18px",
             fontSize: "15px",
@@ -254,7 +366,6 @@ export default function Login() {
           bottom: 24,
           width: isSmall ? 110 : 180,
           opacity: 0.9,
-          pointerEvents: "none",
         }}
       />
     </div>
