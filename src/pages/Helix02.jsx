@@ -197,13 +197,13 @@ export default function Helix02() {
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 4,
-                        fontSize: isMobile ? 8 : 18,
+                        fontSize: isMobile ? 4 : 18,
                       }}
                     >
                       <span
                         aria-hidden="true"
                         style={{
-                          fontSize: isMobile ? 8 : 16,
+                          fontSize: isMobile ? 6 : 16,
                           lineHeight: 1,
                           marginLeft: 4,
                         }}
