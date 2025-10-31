@@ -178,61 +178,105 @@ export default function MediaModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
 
-  // ========== AUDIO (progress) ==========
-  useEffect(() => {
-    if (!open || type !== "audio") return;
-    const el = audioRef.current;
-    if (!el) return;
+  // ========== AUDIO (HLS + progress) ==========
+useEffect(() => {
+  if (!open || type !== "audio") return;
+  const el = audioRef.current;
+  if (!el) return;
 
-    const onLoaded = () => {
-      const d = el.duration || 0;
-      setDuration(d);
-      if (startAt > 0) el.currentTime = startAt;
+  const isHls = typeof url === "string" && url.includes(".m3u8");
+
+  const cleanup = () => {
+    if (hlsRef.current) {
+      try { hlsRef.current.destroy(); } catch {}
+      hlsRef.current = null;
+    }
+    el.removeEventListener("loadedmetadata", onLoaded);
+    el.removeEventListener("timeupdate", onTime);
+    el.removeEventListener("pause", onPause);
+    el.removeEventListener("ended", onEnded);
+  };
+
+  const onLoaded = () => {
+    const d = el.duration || 0;
+    setDuration(d);
+    if (startAt > 0) el.currentTime = startAt;
+    saveProgress({
+      username: user?.username, courseCode, sessionId,
+      lastPosition: startAt || 0,
+      watchedSeconds: startAt || 0,
+      totalSeconds: d,
+      completed: false,
+    });
+  };
+
+  const onTime = () => {
+    const t = el.currentTime || 0;
+    const d = el.duration || duration || 0;
+    setMaxSeen((p) => Math.max(p, t));
+    if (shouldSend(performance.now())) {
       saveProgress({
         username: user?.username, courseCode, sessionId,
-        lastPosition: startAt || 0, watchedSeconds: startAt || 0, totalSeconds: d, completed: false,
+        lastPosition: t,
+        watchedSeconds: Math.max(maxSeen, t),
+        totalSeconds: d,
+        completed: false,
       });
-    };
-    const onTime = () => {
-      const t = el.currentTime || 0;
-      const d = el.duration || duration || 0;
-      setMaxSeen((p) => Math.max(p, t));
-      if (shouldSend(performance.now())) {
-        saveProgress({
-          username: user?.username, courseCode, sessionId,
-          lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
-        });
-      }
-    };
-    const onPause = () => {
-      const t = el.currentTime || 0;
-      const d = el.duration || duration || 0;
-      saveProgress({
-        username: user?.username, courseCode, sessionId,
-        lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
-      });
-    };
-    const onEnded = () => {
-      const d = el.duration || duration || 0;
-      saveProgress({
-        username: user?.username, courseCode, sessionId,
-        lastPosition: d, watchedSeconds: d, totalSeconds: d, completed: true,
-      });
-    };
+    }
+  };
 
-    el.addEventListener("loadedmetadata", onLoaded);
-    el.addEventListener("timeupdate", onTime);
-    el.addEventListener("pause", onPause);
-    el.addEventListener("ended", onEnded);
+  const onPause = () => {
+    const t = el.currentTime || 0;
+    const d = el.duration || duration || 0;
+    saveProgress({
+      username: user?.username, courseCode, sessionId,
+      lastPosition: t,
+      watchedSeconds: Math.max(maxSeen, t),
+      totalSeconds: d,
+      completed: false,
+    });
+  };
 
-    return () => {
-      el.removeEventListener("loadedmetadata", onLoaded);
-      el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("pause", onPause);
-      el.removeEventListener("ended", onEnded);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
+  const onEnded = () => {
+    const d = el.duration || duration || 0;
+    saveProgress({
+      username: user?.username, courseCode, sessionId,
+      lastPosition: d,
+      watchedSeconds: d,
+      totalSeconds: d,
+      completed: true,
+    });
+  };
+
+  // attach listeners
+  el.addEventListener("loadedmetadata", onLoaded);
+  el.addEventListener("timeupdate", onTime);
+  el.addEventListener("pause", onPause);
+  el.addEventListener("ended", onEnded);
+
+  // HLS for audio (Chrome/Edge/Firefox)
+  if (isHls) {
+    if (Hls.isSupported()) {
+      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+      hlsRef.current = hls;
+      hls.attachMedia(el);
+      hls.loadSource(url);
+    } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
+      // Safari
+      el.src = url;
+    } else {
+      console.warn("HLS not supported for audio.");
+      el.src = "";
+    }
+  } else {
+    // فایل‌های MP3/AAC مستقیم
+    el.src = url;
+  }
+
+  return cleanup;
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [open, type, url, sessionId, courseCode, startAt, user?.username]);
+
 
   const applyRate = (r) => {
     setPlaybackRate(r);
