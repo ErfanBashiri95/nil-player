@@ -1,386 +1,77 @@
-/* ========== Helix 01 Page Styles ========== */
+/* ====== FINAL OVERRIDES (lowered ~2cm more, remove glass bar) ====== */
 
-:root {
-    --fg: #ffffff;
-    --fg-dim: rgba(255,255,255,.75);
-    --accent: #1A83CC;
-    --accent-2: #2CA7E3;
-    --glass: rgba(255,255,255,.12);
-    --glass-border: rgba(255,255,255,.25);
-    --shadow: 0 10px 30px rgba(0,0,0,.35);
-  }
-  
-  /* صفحهٔ تمام‌قد با بک‌گراند */
-  .helix-page {
-    position: relative;
-    min-height: 100svh;
-    overflow: hidden;
-    color: var(--fg);
-    direction: rtl; /* فارسی و راست‌به‌چپ */
-    font-family: Vazirmatn, Vazir, system-ui, sans-serif;
-  }
-  
-  /* لایهٔ تصویر پس‌زمینه + زوم آرام */
-  .helix-bg {
-    position: absolute;
-    inset: 0;
-    background-image: url("/assets/helix01_bg.png"); /* ← اینجا مسیر تصویرت */
-    background-size: cover;
-    background-position: center 55%;
-    transform-origin: center;
-    animation: bg-zoom-pan 40s ease-in-out infinite;
-    z-index: 0;
-    filter: saturate(1.15) contrast(1.05) brightness(1.02);
-  }
-  @keyframes bg-zoom-pan {
-    0% { transform: scale(1) translate3d(0,0,0); }
-    50% { transform: scale(1.07) translate3d(0,-1.5%,0); }
-    100% { transform: scale(1) translate3d(0,0,0); }
-  }
-  
-  /* اورورا (هاله‌ی متحرک) بالای تصویر */
-  .helix-aurora {
-    position: absolute;
-    inset: -15% -10% 0 -10%;
-    background:
-      radial-gradient(60% 40% at 20% 10%, rgba(41,120,255,.16), transparent 60%),
-      radial-gradient(50% 35% at 70% 0%, rgba(0,255,170,.10), transparent 60%),
-      radial-gradient(40% 30% at 85% 25%, rgba(255,120,220,.10), transparent 65%);
-    mix-blend-mode: screen;
-    filter: blur(14px) saturate(1.2);
-    animation: aurora-move 24s ease-in-out infinite;
-    pointer-events: none;
-    z-index: 1;
-  }
-  @keyframes aurora-move {
-    0% { transform: translate3d(0,0,0); }
-    50% { transform: translate3d(-2%, -3%, 0); }
-    100% { transform: translate3d(0,0,0); }
-  }
-  
-  /* شِید پایین برای خوانایی کارت‌ها */
-  .helix-shade {
-    position: absolute;
-    inset: 40% 0 0 0;
-    background: linear-gradient(to bottom, transparent, rgba(0,0,0,.45) 25%, rgba(0,0,0,.65));
-    z-index: 2;
-    pointer-events: none;
-  }
-  
-  /* کانتنت اصلی */
-  .helix-content {
-    position: relative;
-    z-index: 3;
-    display: grid;
-    grid-template-columns: 1fr;
-    min-height: 100svh;
-  }
-  
-  /* هدر/تیتر */
-  .helix-hero {
-    position: absolute;
-    top: 18svh;
-    left: 6vw; /* چون RTL است، اینجا عمداً left گذاشتیم تا «سمت چپ تصویر» باشد */
-    max-width: 540px;
-    text-align: right;
-  }
-  
-  .helix-title {
-    font-weight: 800;
-    line-height: 1.15;
-    font-size: clamp(28px, 4.5vw, 56px);
-    margin: 0 0 12px 0;
-    text-shadow: 0 6px 30px rgba(0,0,0,.45);
-  }
-  
-  .helix-subtitle {
-    font-size: clamp(14px, 1.6vw, 18px);
-    color: var(--fg-dim);
-    margin: 0;
-    text-shadow: 0 4px 20px rgba(0,0,0,.45);
-  }
-  
-  /* نوار جلسات پایین صفحه - اسکرول افقی */
-  .sessions-wrap {
-    position: absolute;
-    bottom: 6svh;
-    inset-inline: 4vw;
-  }
-  
-  .sessions-strip {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: clamp(220px, 26vw, 320px);
-    gap: 16px;
-    overflow-x: auto;
-    padding: 12px 4px;
-    scroll-snap-type: x mandatory;
-    -webkit-overflow-scrolling: touch;
-  }
-  .sessions-strip::-webkit-scrollbar { height: 8px; }
-  .sessions-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,.25); border-radius: 999px; }
-  .sessions-strip > * { scroll-snap-align: start; }
-  
-  /* کارت جلسه */
-  .session-card {
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-    border-radius: 18px;
-    box-shadow: var(--shadow);
-    backdrop-filter: blur(8px);
-    padding: 14px 14px 12px;
-    display: grid;
-    gap: 10px;
-  }
-  
-  .session-title {
-    font-weight: 800;
-    font-size: 18px;
-    margin: 0;
-  }
-  
-  .session-desc {
-    font-size: 13px;
-    color: var(--fg-dim);
-    margin: -2px 0 6px 0;
-  }
-  
-  /* دکمه‌ها */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    border: 1px solid transparent;
-    border-radius: 12px;
-    padding: 10px 12px;
-    font-size: 14px;
-    font-weight: 700;
-    cursor: pointer;
-    user-select: none;
-  }
-  
-  .btn-primary {
-    color: #fff;
-    background: linear-gradient(90deg, var(--accent) 0%, var(--accent-2) 100%);
-    box-shadow: 0 6px 16px rgba(26,131,204,.45);
-  }
-  .btn-primary:hover { box-shadow: 0 8px 20px rgba(26,131,204,.65); }
-  
-  .btn-ghost {
-    color: var(--fg);
-    background: rgba(255,255,255,.08);
-    border-color: rgba(255,255,255,.18);
-    backdrop-filter: blur(4px);
-  }
-  
-  /* ==== Mobile hard override: square, no-gap, 3–4 cards visible ==== */
-@media (max-width: 480px) {
-    /* بک‌گراند فول‌کاور و فوکوس وسط */
-    .helix-bg {
-      background-position: center center !important;
-      background-size: cover !important;
-    }
-  
-    /* تیتر همون بالا—طبق حالت فعلیت */
-    .helix-hero {
-      top: 12svh !important;
-      left: 5vw !important;
-      right: 5vw !important;
-      max-width: none !important;
-    }
-    .helix-title { font-size: clamp(26px, 7.2vw, 40px) !important; }
-    .helix-subtitle{ font-size: clamp(13px, 3.7vw, 15px) !important; }
-  
-    /* نوار جلسات بالاتر بیاد */
-    .sessions-wrap {
-      inset-inline: 3vw !important;
-      bottom: 8svh !important;
-    }
-  
-    /* اسلایدر افقیِ بدون فاصله */
-    .sessions-strip {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      justify-content: flex-start !important;
-      align-items: stretch !important;
-  
-      gap: 0 !important;
-      column-gap: 0 !important;
-      row-gap: 0 !important;
-      margin: 0 !important;
-      padding: 0 0 6px 0 !important;
-  
-      overflow-x: auto !important;
-      overflow-y: hidden !important;
-      scroll-snap-type: x mandatory !important;
-      -webkit-overflow-scrolling: touch !important;
-    }
-    .sessions-strip::-webkit-scrollbar { height: 6px; }
-    .sessions-strip::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,.25); border-radius: 999px;
-    }
-  
-    /* هر کارت دقیقاً مربعی و چسبیده */
-    .sessions-strip > * {
-      flex: 0 0 clamp(100px, 28vw, 120px) !important; /* → 3–4 کارت در عرض */
-      max-width: clamp(100px, 28vw, 120px) !important;
-      aspect-ratio: 1 / 1 !important; /* مربع */
-      margin: 0 !important; /* فاصله صفر */
-    }
-  
-    .session-card {
-      padding: 10px !important;
-      border-radius: 14px !important;
-      display: grid !important;
-      grid-template-rows: min-content 1fr min-content !important;
-      gap: 8px !important;
-      backdrop-filter: blur(8px);
-    }
-  
-    .session-title {
-      font-size: 12px !important;
-      margin: 0 0 4px 0 !important;
-    }
-    .session-desc {
-      font-size: 11px !important;
-      margin: 0 0 6px 0 !important;
-      display: -webkit-box !important;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      line-height: 1.35 !important;
-    }
-  
-    /* دکمه‌ها کامل دیده شوند */
-    .actions {
-      display: grid !important;
-      grid-template-columns: 1fr 1fr !important;
-      gap: 6px !important;
-      margin: 0 !important;
-    }
-    .btn {
-      padding: 6px 0 !important;
-      font-size: 11px !important;
-      min-width: 0 !important;
-    }
-  }
-/* ==== Mobile fine-tune: slight gap + higher cards ==== */
-@media (max-width: 480px) {
-    /* جای کلی نوار جلسات بالاتر بیاد */
-    .sessions-wrap {
-      inset-inline: 3vw !important;
-      bottom: 12svh !important; /* ← قبلاً 8svh بود */
-    }
-  
-    /* فاصله‌ی خیلی کم بین کارت‌ها */
-    .sessions-strip {
-      display: flex !important;
-      flex-wrap: nowrap !important;
-      justify-content: flex-start !important;
-      align-items: stretch !important;
-      gap: 8px !important; /* ← فاصله جدید بین کارت‌ها */
-      margin: 0 !important;
-      padding: 0 4px 8px 4px !important;
-  
-      overflow-x: auto !important;
-      overflow-y: hidden !important;
-      scroll-snap-type: x mandatory !important;
-      -webkit-overflow-scrolling: touch !important;
-    }
-  
-    .sessions-strip > * {
-      flex: 0 0 clamp(110px, 30vw, 140px) !important; /* کمی بزرگ‌تر از قبل */
-      max-width: clamp(110px, 30vw, 140px) !important;
-      aspect-ratio: 1 / 1 !important;
-      margin: 0 !important;
-      scroll-snap-align: start !important;
-    }
-  
-    .session-card {
-      padding: 10px !important;
-      border-radius: 16px !important;
-      gap: 8px !important;
-      backdrop-filter: blur(8px);
-    }
-  
-    .session-title {
-      font-size: 12px !important;
-      margin: 0 0 4px 0 !important;
-    }
-  
-    .session-desc {
-      font-size: 11px !important;
-      margin: 0 0 6px 0 !important;
-      line-height: 1.35 !important;
-    }
-  
-    .actions {
-      display: grid !important;
-      grid-template-columns: 1fr 1fr !important;
-      gap: 6px !important;
-      margin: 0 !important;
-    }
-  
-    .btn {
-      padding: 6px 0 !important;
-      font-size: 11px !important;
-      min-width: 0 !important;
-    }
-  }
-/* ==== Mobile text crispness + contrast fix ==== */
-@media (max-width: 480px) {
-    /* کنتراست بیشتر و بلور کمتر روی کارت‌ها */
-    .session-card {
-      background: rgba(10,16,34,.45) !important; /* تیره‌تر از قبل */
-      border-color: rgba(255,255,255,.22) !important;
-      -webkit-backdrop-filter: blur(4px) saturate(110%) !important;
-      backdrop-filter: blur(4px) saturate(110%) !important; /* قبلاً 8px بود */
-      transform: none !important; /* از بلر ناشی از GPU جلوگیری */
-    }
-  
-    /* نوشته‌ها کمی درشت‌تر و خواناتر */
-    .session-title {
-      font-size: 13.5px !important;
-      font-weight: 800 !important;
-      letter-spacing: .1px !important;
-      color: #fff !important;
-      text-shadow: 0 0 1px rgba(0,0,0,.35); /* کانتور خیلی نرم */
-    }
-    .session-desc {
-      font-size: 12.5px !important;
-      line-height: 1.4 !important;
-      color: rgba(255,255,255,.86) !important; /* روشن‌تر از قبل */
-      text-shadow: 0 0 1px rgba(0,0,0,.25);
-    }
-  
-    /* دکمه‌ها هم کمی درشت‌تر تا شارپ‌تر دیده بشن */
-    .btn { font-size: 12.5px !important; }
-  
-    /* جلوگیری از رندر تار داخل لیست اسکرولی */
-    .sessions-strip {
-      will-change: auto !important; /* از GPU over-acceleration جلوگیری */
-      transform: none !important;
-      -webkit-font-smoothing: antialiased; /* لطیف ولی شارپ‌تر روی WebKit */
-      text-rendering: optimizeLegibility;
-    }
-  }
-  
-  /* کمی رنگ متن‌های کم‌رنگ را در کل صفحه شارپ‌تر کنیم */
-  :root {
-    --fg-dim: rgba(255,255,255,.82);
-  }
-/* ---- Force hero position on mobile ---- */
-@media (max-width: 640px) {
-  .helix-page .helix-content { position: relative !important; }
+/* همهٔ سایزها */
+.helix-page .sessions-wrap{
+  position: absolute !important;
+  left: 4vw !important;
+  right: 4vw !important;
+  top: 62vh !important; /* پایین‌تر برای نمایش کامل کارت‌ها */
+  bottom: auto !important;
+  z-index: 4 !important;
+}
 
-  .helix-page .helix-content .helix-hero {
-    position: absolute !important;
-    top: min(8svh, 8vh) !important; /* عدد را کم/زیاد کن: 6 → بالاتر، 10 → پایین‌تر */
-    left: 5vw !important;
-    right: 5vw !important;
-    margin: 0 !important;
-    transform: none !important; /* اگر قبلا translate داشت، بی‌اثر می‌کند */
+/* دسکتاپ/لپ‌تاپ */
+@media (min-width: 1024px){
+  .helix-page .sessions-wrap{
+    top: 58vh !important; /* حدود ۲ سانت پایین‌تر */
   }
 }
-     
+
+/* موبایل */
+@media (max-width: 600px){
+  .helix-page .sessions-wrap{
+    left: 3vw !important;
+    right: 3vw !important;
+    top: 55svh !important; /* حدود ۲ سانت پایین‌تر */
+    padding-bottom: 6px !important;
+  }
+
+  .helix-page .sessions-strip{
+    display: flex !important;
+    gap: 10px !important;
+    overflow-x: auto !important;
+    scroll-snap-type: x mandatory !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .helix-page .sessions-strip > *{
+    flex: 0 0 clamp(180px, 62vw, 240px) !important;
+    scroll-snap-align: start !important;
+  }
+
+  .helix-page .session-card{
+    padding: 12px 12px 10px !important;
+    border-radius: 14px !important;
+    display: grid !important;
+    grid-template-rows: min-content minmax(24px, auto) min-content !important;
+    row-gap: 8px !important;
+    min-height: 120px !important;
+    max-height: 150px !important;
+  }
+
+  .helix-page .session-title{
+    font-size: 14px !important;
+    margin: 0 !important;
+  }
+  .helix-page .session-desc{
+    font-size: 12px !important;
+    margin: 0 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    line-height: 1.35 !important;
+  }
+
+  .helix-page .session-card .btn{
+    font-size: 12px !important;
+    padding: 6px 10px !important;
+  }
+
+  /* ✅ حذف نوار تیره شیشه‌ای پایین صفحه */
+  .helix-page .helix-shade,
+  .helix-page .helix-aurora{
+    background: transparent !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

@@ -37,7 +37,7 @@ export default function Helix02() {
   useEffect(() => {
     (async () => {
       await Promise.allSettled([
-        preloadImage("/assets/helix02_bg.png"), // اگر نبود، خطا بی‌اثر می‌شود
+        preloadImage("/assets/helix02_bg.png"),
       ]);
 
       const { data, error } = await supabase
@@ -101,7 +101,23 @@ export default function Helix02() {
       <HeaderBar />
 
       <div className="helix-bg" />
-      <StarOverlay />
+
+      {/* ✅ ستاره‌ها فقط در نیمهٔ بالایی صفحه */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "50vh",
+          overflow: "hidden",
+          zIndex: 1, // بالاتر از بک‌گراند، پایین‌تر از شید و کانتنت
+          pointerEvents: "none",
+        }}
+      >
+        <StarOverlay />
+      </div>
+
       <div className="helix-aurora" />
       <div className="helix-shade" />
 
@@ -153,12 +169,14 @@ export default function Helix02() {
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
                     >
+                      <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, marginLeft: 6 }}>🎬</span>
                       {STR("video")}
                     </button>
                     <button
                       className="btn btn-ghost"
                       onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
                     >
+                      <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, marginLeft: 6 }}>🎧</span>
                       {STR("podcast")}
                     </button>
                   </div>
