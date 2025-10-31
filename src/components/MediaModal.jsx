@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import Hls from "hls.js"; // ← NEW
+import Hls from "hls.js";
 import { useAuth } from "../context/AuthContext";
 import { validateSecureURL } from "../utils/tokenUtils";
-import { saveProgress } from "../utils/progress";
+import { saveProgress, getProgress } from "../utils/progress"; // ← NEW
 
 export default function MediaModal({
   open, onClose, type, url, title, sessionId, initialTime, courseCode
@@ -17,21 +17,32 @@ export default function MediaModal({
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
-  const hlsRef = useRef(null); // ← NEW
+  const hlsRef = useRef(null);
 
-  // progress state
   const [duration, setDuration] = useState(0);
   const [maxSeen, setMaxSeen] = useState(0);
   const lastSentRef = useRef(0);
   const shouldSend = (now) => (now - lastSentRef.current > 5000 ? (lastSentRef.current = now, true) : false);
 
-  // validate url
+  // اگر initialTime نداریم، از DB بگیر
+  const [startAt, setStartAt] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const base = Number(initialTime || 0);
+      if (base > 0) { setStartAt(base); return; }
+      if (!open || !user?.username || !sessionId) return;
+      const { data } = await getProgress(user.username, sessionId);
+      if (!cancelled) setStartAt(Number(data?.last_position || 0));
+    })();
+    return () => { cancelled = true; };
+  }, [open, initialTime, user?.username, sessionId]);
+
   useEffect(() => {
     if (!open || !url) return;
     setExpired(!validateSecureURL(url));
   }, [url, open]);
 
-  // floating watermark
   useEffect(() => {
     if (!open) return;
     const tick = () => {
@@ -46,7 +57,6 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // basic screen-capture guard (best-effort)
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
@@ -60,52 +70,46 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // close on ESC
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // ===== HLS setup (VIDEO) =====
+  // ========== VIDEO (HLS + progress) ==========
   useEffect(() => {
     if (!open || type !== "video") return;
-
     const video = videoRef.current;
     if (!video) return;
 
     const isHls = typeof url === "string" && url.includes(".m3u8");
 
-    // cleanup function
     const cleanup = () => {
-      if (hlsRef.current) {
-        try { hlsRef.current.destroy(); } catch {}
-        hlsRef.current = null;
-      }
-      // remove listeners we add below
+      if (hlsRef.current) { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
       video.removeEventListener("loadedmetadata", onLoadedMeta);
       video.removeEventListener("timeupdate", onTime);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("ended", onEnded);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+
+    const jumpToStart = () => {
+      if (startAt && video.readyState >= 1) {
+        try { video.currentTime = startAt; } catch {}
+      } else {
+        const once = () => { try { video.currentTime = startAt || 0; } catch {} video.removeEventListener("loadedmetadata", once); };
+        video.addEventListener("loadedmetadata", once);
+      }
     };
 
     const onLoadedMeta = () => {
       const d = video.duration || 0;
       setDuration(d);
-      // jump to last position if any
-      if (typeof initialTime === "number" && initialTime > 0) {
-        video.currentTime = initialTime;
-      }
-      // send initial row with totalSeconds
+      jumpToStart();
       saveProgress({
-        username: user?.username,
-        courseCode, sessionId,
-        lastPosition: initialTime || 0,
-        watchedSeconds: initialTime || 0,
-        totalSeconds: d,
-        completed: false,
+        username: user?.username, courseCode, sessionId,
+        lastPosition: startAt || 0, watchedSeconds: startAt || 0, totalSeconds: d, completed: false,
       });
-      // auto play
       video.play().catch(() => {});
     };
 
@@ -115,12 +119,8 @@ export default function MediaModal({
       setMaxSeen((prev) => Math.max(prev, t));
       if (shouldSend(performance.now())) {
         saveProgress({
-          username: user?.username,
-          courseCode, sessionId,
-          lastPosition: t,
-          watchedSeconds: Math.max(maxSeen, t),
-          totalSeconds: d,
-          completed: false,
+          username: user?.username, courseCode, sessionId,
+          lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
         });
       }
     };
@@ -128,65 +128,57 @@ export default function MediaModal({
       const t = video.currentTime || 0;
       const d = video.duration || duration || 0;
       saveProgress({
-        username: user?.username,
-        courseCode, sessionId,
-        lastPosition: t,
-        watchedSeconds: Math.max(maxSeen, t),
-        totalSeconds: d,
-        completed: false,
+        username: user?.username, courseCode, sessionId,
+        lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
       });
     };
     const onEnded = () => {
       const d = video.duration || duration || 0;
       saveProgress({
-        username: user?.username,
-        courseCode, sessionId,
-        lastPosition: d,
-        watchedSeconds: d,
-        totalSeconds: d,
-        completed: true,
+        username: user?.username, courseCode, sessionId,
+        lastPosition: d, watchedSeconds: d, totalSeconds: d, completed: true,
+      });
+    };
+    const onBeforeUnload = () => {
+      const t = video.currentTime || 0;
+      const d = video.duration || duration || 0;
+      saveProgress({
+        username: user?.username, courseCode, sessionId,
+        lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
       });
     };
 
-    // attach listeners
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("timeupdate", onTime);
     video.addEventListener("pause", onPause);
     video.addEventListener("ended", onEnded);
+    window.addEventListener("beforeunload", onBeforeUnload);
 
-    // HLS path
     if (isHls) {
       if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: true,
-          backBufferLength: 60,
-        });
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 60 });
         hlsRef.current = hls;
         hls.attachMedia(video);
         hls.loadSource(url);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          // metadata may not fire on some streams until play:
+          // اگر متادیتا هنوز نیامده، با play یا readyState 1 تریگر می‌شود
           if (video.readyState >= 1) onLoadedMeta();
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        // Safari/iOS
         video.src = url;
       } else {
-        console.warn("HLS not supported on this browser.");
-        video.src = ""; // avoid dead state
+        console.warn("HLS not supported.");
+        video.src = "";
       }
     } else {
-      // MP4 or others
       video.src = url;
     }
 
-    // cleanup on modal close/unmount/change
     return cleanup;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type, url, sessionId, courseCode, initialTime, user?.username]);
+  }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
 
-  // ===== AUDIO progress =====
+  // ========== AUDIO (progress) ==========
   useEffect(() => {
     if (!open || type !== "audio") return;
     const el = audioRef.current;
@@ -195,13 +187,10 @@ export default function MediaModal({
     const onLoaded = () => {
       const d = el.duration || 0;
       setDuration(d);
-      if (typeof initialTime === "number" && initialTime > 0) el.currentTime = initialTime;
+      if (startAt > 0) el.currentTime = startAt;
       saveProgress({
-        username: user?.username,
-        courseCode, sessionId,
-        lastPosition: initialTime || 0,
-        watchedSeconds: initialTime || 0,
-        totalSeconds: d, completed: false,
+        username: user?.username, courseCode, sessionId,
+        lastPosition: startAt || 0, watchedSeconds: startAt || 0, totalSeconds: d, completed: false,
       });
     };
     const onTime = () => {
@@ -211,8 +200,7 @@ export default function MediaModal({
       if (shouldSend(performance.now())) {
         saveProgress({
           username: user?.username, courseCode, sessionId,
-          lastPosition: t, watchedSeconds: Math.max(maxSeen, t),
-          totalSeconds: d, completed: false,
+          lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
         });
       }
     };
@@ -221,8 +209,7 @@ export default function MediaModal({
       const d = el.duration || duration || 0;
       saveProgress({
         username: user?.username, courseCode, sessionId,
-        lastPosition: t, watchedSeconds: Math.max(maxSeen, t),
-        totalSeconds: d, completed: false,
+        lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
       });
     };
     const onEnded = () => {
@@ -245,7 +232,7 @@ export default function MediaModal({
       el.removeEventListener("ended", onEnded);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type, url, sessionId, courseCode, initialTime, user?.username]);
+  }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
 
   const applyRate = (r) => {
     setPlaybackRate(r);
@@ -284,11 +271,7 @@ export default function MediaModal({
   };
 
   return (
-    <div
-      className="media-modal-overlay"
-      onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()}
-      style={S.overlay}
-    >
+    <div className="media-modal-overlay" onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()} style={S.overlay}>
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
         <div style={S.header}>
           <div style={S.headLeft}>
@@ -302,7 +285,6 @@ export default function MediaModal({
           <div style={{ position: "relative" }}>
             <video
               ref={videoRef}
-              // src برای HLS توسط hls.js ست می‌شود
               controls playsInline autoPlay
               controlsList="nodownload noremoteplayback"
               disablePictureInPicture
@@ -313,8 +295,7 @@ export default function MediaModal({
             {user?.username && (
               <div style={{
                 position: "absolute", ...wmPos,
-                opacity: wmVisible ? 0.4 : 0,
-                transform: wmVisible ? "scale(1)" : "scale(0.96)",
+                opacity: wmVisible ? 0.4 : 0, transform: wmVisible ? "scale(1)" : "scale(0.96)",
                 transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
                 color: "#fff", fontWeight: 700, fontSize: "clamp(12px, 1.8vw, 16px)",
                 pointerEvents: "none", userSelect: "none", textShadow: "0 0 10px rgba(0,0,0,.7)",
@@ -323,9 +304,7 @@ export default function MediaModal({
               </div>
             )}
             {warning && (
-              <div style={S.warn}>⚠️ ضبط صفحه شناسایی شد!
-                <br />لطفاً ضبط را متوقف کنید.
-              </div>
+              <div style={S.warn}>⚠️ ضبط صفحه شناسایی شد!<br />لطفاً ضبط را متوقف کنید.</div>
             )}
             <div style={S.fabRate}>
               <select value={playbackRate} onChange={(e) => applyRate(Number(e.target.value))} style={S.fabSelect}>
@@ -351,6 +330,9 @@ export default function MediaModal({
     </div>
   );
 }
+
+/* styles object S همان نسخهٔ قبل است — تغییر ندارد */
+
 
 /* ---------- styles ---------- */
 const S = {
