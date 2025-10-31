@@ -16,17 +16,17 @@ export default function Login() {
   // --- پارامترهای موبایل ---
   const MOBILE_TEXT_OFFSET_X = -30;
   const MOBILE_TEXT_OFFSET_Y = -20;
-  const MOBILE_ICON_OFFSET_X = 130;
+  const MOBILE_ICON_OFFSET_X = 130; // مقدار دلخواه تو (پیکسل) — ولی در عمل کلمپ می‌شود
   const MOBILE_ICON_OFFSET_Y = 0;
   const MOBILE_GAP = 3;
   const MOBILE_ICON_SCALE = 0.79;
   const MOBILE_FORM_TOP = "65%";
 
-  // سرعت‌ها (کمتر = آهسته‌تر)
+  // سرعت‌ها
   const GATHER_LERP = 0.03;
   const SCATTER_LERP = 0.03;
 
-  // ✅ فقط preload بکگراند (بدون مسدود کردن UI)
+  // ✅ preload بکگراند، بدون بلاک‌کردن UI
   useEffect(() => {
     const link = document.createElement("link");
     link.rel = "preload";
@@ -68,7 +68,7 @@ export default function Login() {
 
     const TEXT_OFFSET_X = isSM ? MOBILE_TEXT_OFFSET_X : -10;
     const TEXT_OFFSET_Y = isSM ? MOBILE_TEXT_OFFSET_Y : 0;
-    const ICON_OFFSET_X = isSM ? MOBILE_ICON_OFFSET_X : 320;
+    const ICON_OFFSET_X = isSM ? MOBILE_ICON_OFFSET_X : 320; // ورودی پایه، اما بعداً کلمپ می‌شود
     const ICON_OFFSET_Y = isSM ? MOBILE_ICON_OFFSET_Y : 0;
 
     let targets = [];
@@ -105,6 +105,7 @@ export default function Login() {
       return pts;
     }
 
+    // 🔧 آیکون با «کلمپ هوشمند» تا همیشه کامل دیده شود
     function makeIconPoints(font, baseGap = 4) {
       const W = Math.min(innerWidth, 1100);
       const H = Math.min(innerHeight, 520);
@@ -115,24 +116,40 @@ export default function Login() {
 
       const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
       const scale = isSM ? MOBILE_ICON_SCALE : 1;
+
+      // اندازه آیکون نسبت به فونت/ویوپورت
       const R = Math.max(34, Math.min(56, em * 0.87 * scale));
       const ring = Math.max(6, Math.round(R * 0.38));
       const triW = R * 0.95;
       const triH = R * 0.95;
 
-      const cx = W / 2 + ICON_OFFSET_X;
-      const cy = H / 2 + ICON_OFFSET_Y;
+      // افست مطلوب → به درصد تبدیل می‌کنیم و سپس کلمپ
+      const desiredOffsetX = isSM ? Math.max(0.22 * W, MOBILE_ICON_OFFSET_X) : Math.max(0.28 * W, ICON_OFFSET_X);
+      const desiredOffsetY = ICON_OFFSET_Y;
 
+      // حاشیهٔ امن تا دایره کامل جا شود
+      const pad = R + 10;
+
+      // clamp(x, a, b)
+      const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+
+      const cx = clamp(W / 2 + desiredOffsetX, pad, W - pad);
+      const cy = clamp(H / 2 + desiredOffsetY, pad, H - pad);
+
+      // دایره
       c.fillStyle = "#fff";
       c.beginPath();
       c.arc(cx, cy, R, 0, Math.PI * 2);
       c.fill();
+
+      // سوراخ حلقه
       c.globalCompositeOperation = "destination-out";
       c.beginPath();
       c.arc(cx, cy, R - ring, 0, Math.PI * 2);
       c.fill();
       c.globalCompositeOperation = "source-over";
 
+      // مثلث Play
       const tcx = cx + R * 0.14;
       const tcy = cy;
       c.beginPath();
@@ -151,6 +168,7 @@ export default function Login() {
           if (data[a] > 128) {
             const offX = (canvas.width / DPR - W) / 2;
             const offY = (canvas.height / DPR - H) / 2;
+            // توجه: TEXT_OFFSET_X/Y همچنان اعمال می‌شود تا با متن هم‌راستا بماند
             pts.push({ x: x + offX + TEXT_OFFSET_X, y: y + offY + TEXT_OFFSET_Y });
           }
         }
@@ -309,7 +327,6 @@ export default function Login() {
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
-        /* ✅ بکگراند مستقیم و آمادهٔ نمایش */
         backgroundImage: "url('/assets/galaxy_bg11.png')",
         backgroundRepeat: "no-repeat",
         backgroundSize: "cover",
