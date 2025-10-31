@@ -1,3 +1,4 @@
+// src/pages/Login.jsx
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
@@ -13,20 +14,19 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth() || {};
 
-  // --- پارامترهای موبایل ---
+  // --- موبایل ---
   const MOBILE_TEXT_OFFSET_X = -30;
   const MOBILE_TEXT_OFFSET_Y = -20;
-  const MOBILE_ICON_OFFSET_X = 130; // مقدار دلخواه تو (پیکسل) — ولی در عمل کلمپ می‌شود
+  const MOBILE_ICON_OFFSET_X = 130;
   const MOBILE_ICON_OFFSET_Y = 0;
   const MOBILE_GAP = 3;
   const MOBILE_ICON_SCALE = 0.79;
   const MOBILE_FORM_TOP = "65%";
 
-  // سرعت‌ها
   const GATHER_LERP = 0.03;
   const SCATTER_LERP = 0.03;
 
-  // ✅ preload بکگراند، بدون بلاک‌کردن UI
+  // Preload background
   useEffect(() => {
     const link = document.createElement("link");
     link.rel = "preload";
@@ -43,7 +43,6 @@ export default function Login() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d", { alpha: true });
     const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-
     let isSM = window.innerWidth < 640;
 
     const fit = () => {
@@ -68,7 +67,7 @@ export default function Login() {
 
     const TEXT_OFFSET_X = isSM ? MOBILE_TEXT_OFFSET_X : -10;
     const TEXT_OFFSET_Y = isSM ? MOBILE_TEXT_OFFSET_Y : 0;
-    const ICON_OFFSET_X = isSM ? MOBILE_ICON_OFFSET_X : 320; // ورودی پایه، اما بعداً کلمپ می‌شود
+    const ICON_OFFSET_X = isSM ? MOBILE_ICON_OFFSET_X : 320; // فقط پایه؛ بعداً کلمپ می‌شود
     const ICON_OFFSET_Y = isSM ? MOBILE_ICON_OFFSET_Y : 0;
 
     let targets = [];
@@ -105,7 +104,7 @@ export default function Login() {
       return pts;
     }
 
-    // 🔧 آیکون با «کلمپ هوشمند» تا همیشه کامل دیده شود
+    // ✅ آیکون: بدون اعمال TEXT_OFFSET روی نقاط آیکون + کلمپ کامل داخل کادر
     function makeIconPoints(font, baseGap = 4) {
       const W = Math.min(innerWidth, 1100);
       const H = Math.min(innerHeight, 520);
@@ -116,21 +115,16 @@ export default function Login() {
 
       const em = parseInt(font.match(/(\d+)px/)[1] || "80", 10);
       const scale = isSM ? MOBILE_ICON_SCALE : 1;
-
-      // اندازه آیکون نسبت به فونت/ویوپورت
       const R = Math.max(34, Math.min(56, em * 0.87 * scale));
       const ring = Math.max(6, Math.round(R * 0.38));
       const triW = R * 0.95;
       const triH = R * 0.95;
 
-      // افست مطلوب → به درصد تبدیل می‌کنیم و سپس کلمپ
-      const desiredOffsetX = isSM ? Math.max(0.22 * W, MOBILE_ICON_OFFSET_X) : Math.max(0.28 * W, ICON_OFFSET_X);
+      // آفست مطلوب (نسبتی + پیکسلی) → سپس کلمپ
+      const desiredOffsetX = (isSM ? 0.25 : 0.28) * W + ICON_OFFSET_X; // راست‌تر ولی امن
       const desiredOffsetY = ICON_OFFSET_Y;
 
-      // حاشیهٔ امن تا دایره کامل جا شود
-      const pad = R + 10;
-
-      // clamp(x, a, b)
+      const pad = R + 12;
       const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 
       const cx = clamp(W / 2 + desiredOffsetX, pad, W - pad);
@@ -142,7 +136,7 @@ export default function Login() {
       c.arc(cx, cy, R, 0, Math.PI * 2);
       c.fill();
 
-      // سوراخ حلقه
+      // حلقه خالی
       c.globalCompositeOperation = "destination-out";
       c.beginPath();
       c.arc(cx, cy, R - ring, 0, Math.PI * 2);
@@ -168,8 +162,8 @@ export default function Login() {
           if (data[a] > 128) {
             const offX = (canvas.width / DPR - W) / 2;
             const offY = (canvas.height / DPR - H) / 2;
-            // توجه: TEXT_OFFSET_X/Y همچنان اعمال می‌شود تا با متن هم‌راستا بماند
-            pts.push({ x: x + offX + TEXT_OFFSET_X, y: y + offY + TEXT_OFFSET_Y });
+            // ⛔️ برخلاف متن، روی آیکون TEXT_OFFSET اعمال نمی‌کنیم
+            pts.push({ x: x + offX, y: y + offY });
           }
         }
       }
@@ -183,9 +177,8 @@ export default function Login() {
       targets = [...textPts, ...iconPts];
     }
 
-    // ⭐ ستاره‌های سفید
+    // ستاره‌های سفید
     const STAR_COLOR = "#ffffff";
-
     const BG_COUNT = innerWidth < 600 ? 80 : 150;
     const TEXT_COUNT = innerWidth < 600 ? 900 : 1700;
 
@@ -285,11 +278,9 @@ export default function Login() {
     };
   }, []);
 
-  // ---- Login Handler ----
   async function handleLogin() {
     const id = (username || "").trim().toLowerCase();
     if (!id) return;
-
     try {
       if (typeof login === "function") {
         const u = await login(id);
@@ -298,20 +289,9 @@ export default function Login() {
         return;
       }
     } catch {}
-
-    const found = allowed.find(
-      (u) => (u.username || "").trim().toLowerCase() === id
-    );
-    if (!found) {
-      alert("یوزرنیم مجاز نیست.");
-      return;
-    }
-    const userObj = {
-      id: found.username,
-      name: found.username,
-      username: found.username,
-      course_code: (found.course_code || "").toUpperCase(),
-    };
+    const found = allowed.find((u) => (u.username || "").trim().toLowerCase() === id);
+    if (!found) return alert("یوزرنیم مجاز نیست.");
+    const userObj = { id: found.username, name: found.username, username: found.username, course_code: (found.course_code || "").toUpperCase() };
     try { localStorage.setItem("nil_auth", JSON.stringify(userObj)); } catch {}
     navigate(userObj.course_code === "HELIX02" ? "/helix02" : "/helix01", { replace: true });
   }
@@ -339,18 +319,9 @@ export default function Login() {
     >
       <canvas
         ref={canvasRef}
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          background: "transparent",
-          pointerEvents: "none",
-          zIndex: 10,
-        }}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", background: "transparent", pointerEvents: "none", zIndex: 10 }}
       />
 
-      {/* فرم ورود */}
       <div
         style={{
           position: "absolute",
