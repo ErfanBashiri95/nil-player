@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { validateSecureURL } from "../utils/tokenUtils";
+import { saveProgress } from "../utils/progress";
 
-export default function MediaModal({ open, onClose, type, url, title, sessionId, initialTime, courseCode }) {
+export default function MediaModal({
+  open, onClose, type, url, title, sessionId, initialTime, courseCode
+}) {
   const { user } = useAuth();
   const [playbackRate, setPlaybackRate] = useState(1);
   const [wmVisible, setWmVisible] = useState(false);
@@ -12,6 +15,18 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+
+  // برای محاسبهٔ درصد تماشا
+  const [duration, setDuration] = useState(0);
+  const [maxSeen, setMaxSeen] = useState(0);
+  const lastSentRef = useRef(0);
+  const shouldSend = (now) => {
+    if (now - lastSentRef.current > 5000) { // هر ~۵ ثانیه
+      lastSentRef.current = now;
+      return true;
+    }
+    return false;
+  };
 
   // اعتبار لینک
   useEffect(() => {
@@ -34,7 +49,7 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
     return () => clearInterval(id);
   }, [open]);
 
-  // ضد ضبط صفحه
+  // ضد ضبط صفحه (best-effort)
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
@@ -64,51 +79,6 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
       el.addEventListener("loadedmetadata", once);
     }
   }, [open, type, initialTime]);
-
-  // پشتیبانی از HLS (m3u8) با hls.js در مرورگرهای غیر-Safari
-  useEffect(() => {
-    if (!open || type !== "video" || !url) return;
-
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
-
-    let hlsInstance = null;
-
-    (async () => {
-      // اگر مرورگر به صورت Native پخش کند (Safari/iOS)
-      if (videoEl.canPlayType("application/vnd.apple.mpegurl")) {
-        videoEl.src = url;
-        videoEl.load();
-        return;
-      }
-      // سایر مرورگرها → hls.js
-      const { default: Hls } = await import("hls.js");
-      if (Hls.isSupported()) {
-        hlsInstance = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          backBufferLength: 90,
-        });
-        hlsInstance.loadSource(url);
-        hlsInstance.attachMedia(videoEl);
-      } else {
-        // fallback بسیار نادر
-        videoEl.src = url;
-        videoEl.load();
-      }
-    })();
-
-    return () => {
-      try {
-        if (hlsInstance) hlsInstance.destroy();
-        if (videoEl) {
-          videoEl.pause();
-          videoEl.removeAttribute("src");
-          videoEl.load();
-        }
-      } catch {}
-    };
-  }, [open, type, url]);
 
   const applyRate = (r) => {
     setPlaybackRate(r);
@@ -140,10 +110,7 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
             <button
               key={r}
               onClick={() => onChange(r)}
-              style={{
-                ...S.pill,
-                ...(value === r ? S.pillActive : null),
-              }}
+              style={{ ...S.pill, ...(value === r ? S.pillActive : null) }}
             >
               {r}x
             </button>
@@ -153,8 +120,56 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
     );
   };
 
+  const handleTimeLike = (current, elDuration) => {
+    const t = current || 0;
+    const d = elDuration || duration || 0;
+    setMaxSeen((prev) => Math.max(prev, t));
+    if (shouldSend(performance.now())) {
+      saveProgress({
+        username: user?.username,
+        courseCode,
+        sessionId,
+        lastPosition: t,
+        watchedSeconds: Math.max(maxSeen, t),
+        totalSeconds: d,
+        completed: false,
+      });
+    }
+  };
+
+  const handlePauseLike = (current, elDuration) => {
+    const t = current || 0;
+    const d = elDuration || duration || 0;
+    saveProgress({
+      username: user?.username,
+      courseCode,
+      sessionId,
+      lastPosition: t,
+      watchedSeconds: Math.max(maxSeen, t),
+      totalSeconds: d,
+      completed: false,
+    });
+  };
+
+  const handleEndedLike = (elDuration) => {
+    const d = elDuration || duration || 0;
+    saveProgress({
+      username: user?.username,
+      courseCode,
+      sessionId,
+      lastPosition: d,
+      watchedSeconds: d,
+      totalSeconds: d,
+      completed: true,
+    });
+  };
+
   return (
-    <div className="media-modal-overlay" onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()} style={S.overlay}>
+    <div
+      className="media-modal-overlay"
+      onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()}
+      style={S.overlay}
+    >
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
         {/* هدر */}
         <div style={S.header}>
@@ -170,33 +185,53 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
           <div style={{ position: "relative" }}>
             <video
               ref={videoRef}
-              // src را عمداً نمی‌گذاریم؛ در useEffect ست می‌شود (native یا hls.js)
+              src={url}
               controls
               playsInline
               autoPlay
-              crossOrigin="anonymous"
               controlsList="nodownload noremoteplayback"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
               style={S.video}
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration || 0;
+                setDuration(d);
+                // ذخیرهٔ اولیهٔ مدت
+                saveProgress({
+                  username: user?.username,
+                  courseCode,
+                  sessionId,
+                  lastPosition: initialTime || 0,
+                  watchedSeconds: initialTime || 0,
+                  totalSeconds: d,
+                  completed: false,
+                });
+              }}
+              onTimeUpdate={(e) => handleTimeLike(e.currentTarget.currentTime, e.currentTarget.duration)}
+              onPause={(e) => handlePauseLike(e.currentTarget.currentTime, e.currentTarget.duration)}
+              onEnded={(e) => handleEndedLike(e.currentTarget.duration)}
             />
 
             {/* واترمارک */}
             {user?.username && (
-              <div style={{
-                position: "absolute",
-                ...wmPos,
-                opacity: wmVisible ? 0.4 : 0,
-                transform: wmVisible ? "scale(1)" : "scale(0.96)",
-                transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
-                color: "#fff",
-                fontWeight: 700,
-                fontSize: "clamp(12px, 1.8vw, 16px)",
-                pointerEvents: "none",
-                userSelect: "none",
-                textShadow: "0 0 10px rgba(0,0,0,0.7)",
-              }}>
-                {`${user.username} • ${new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}
+              <div
+                style={{
+                  position: "absolute",
+                  ...wmPos,
+                  opacity: wmVisible ? 0.4 : 0,
+                  transform: wmVisible ? "scale(1)" : "scale(0.96)",
+                  transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: "clamp(12px, 1.8vw, 16px)",
+                  pointerEvents: "none",
+                  userSelect: "none",
+                  textShadow: "0 0 10px rgba(0,0,0,0.7)",
+                }}
+              >
+                {`${user.username} • ${new Date().toLocaleTimeString("fa-IR", {
+                  hour: "2-digit", minute: "2-digit", second: "2-digit"
+                })}`}
               </div>
             )}
 
@@ -215,7 +250,9 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
                 onChange={(e) => applyRate(Number(e.target.value))}
                 style={S.fabSelect}
               >
-                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => <option key={s} value={s}>{s}x</option>)}
+                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
+                  <option key={s} value={s}>{s}x</option>
+                ))}
               </select>
             </div>
           </div>
@@ -229,6 +266,22 @@ export default function MediaModal({ open, onClose, type, url, title, sessionId,
               controlsList="nodownload noremoteplayback"
               onContextMenu={(e) => e.preventDefault()}
               style={S.audio}
+              onLoadedMetadata={(e) => {
+                const d = e.currentTarget.duration || 0;
+                setDuration(d);
+                saveProgress({
+                  username: user?.username,
+                  courseCode,
+                  sessionId,
+                  lastPosition: initialTime || 0,
+                  watchedSeconds: initialTime || 0,
+                  totalSeconds: d,
+                  completed: false,
+                });
+              }}
+              onTimeUpdate={(e) => handleTimeLike(e.currentTarget.currentTime, e.currentTarget.duration)}
+              onPause={(e) => handlePauseLike(e.currentTarget.currentTime, e.currentTarget.duration)}
+              onEnded={(e) => handleEndedLike(e.currentTarget.duration)}
             />
             <SpeedPills value={playbackRate} onChange={applyRate} />
           </div>
