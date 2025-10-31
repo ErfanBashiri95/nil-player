@@ -36,9 +36,7 @@ export default function Helix02() {
   // خواندن جلسات + پیش‌لود بک‌گراند + آماده‌سازی صفحه
   useEffect(() => {
     (async () => {
-      await Promise.allSettled([
-        preloadImage("/assets/helix02_bg.png"),
-      ]);
+      await Promise.allSettled([preloadImage("/assets/helix02_bg.png")]);
 
       const { data, error } = await supabase
         .from("nilplayer_sessions")
@@ -111,7 +109,7 @@ export default function Helix02() {
           right: 0,
           height: "50vh",
           overflow: "hidden",
-          zIndex: 1, // بالاتر از بک‌گراند، پایین‌تر از شید و کانتنت
+          zIndex: 1,
           pointerEvents: "none",
         }}
       >
@@ -133,6 +131,7 @@ export default function Helix02() {
               const p = progressMap[s.id];
               const percent = p?.percent ?? 0;
               const done = !!p?.completed || percent === 100;
+              const isMobile = window.innerWidth < 768;
 
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
@@ -164,19 +163,53 @@ export default function Helix02() {
                   <h3 className="session-title">{s.title}</h3>
                   <p className="session-desc">{s.desc}</p>
 
+                  {/* ✅ دکمه‌ها با فونت متفاوت در موبایل/دسکتاپ */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <button
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 4,
+                        fontSize: isMobile ? 10 : 18,
+                      }}
                     >
-                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          fontSize: isMobile ? 12 : 16,
+                          lineHeight: 1,
+                          marginLeft: 4,
+                        }}
+                      >
+                        🎬
+                      </span>
                       {STR("video")}
                     </button>
+
                     <button
                       className="btn btn-ghost"
                       onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 4,
+                        fontSize: isMobile ? 10 : 18,
+                      }}
                     >
-                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎧</span>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          fontSize: isMobile ? 12 : 16,
+                          lineHeight: 1,
+                          marginLeft: 4,
+                        }}
+                      >
+                        🎧
+                      </span>
                       {STR("podcast")}
                     </button>
                   </div>
