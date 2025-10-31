@@ -1,28 +1,28 @@
-/* ====== FINAL OVERRIDES: sessions position + mobile compact cards ====== */
+/* ====== FINAL OVERRIDES (Adjusted 2cm lower) ====== */
 
-/* جای نوار جلسات بالاتر (همهٔ سایزها) */
+/* جای نوار جلسات کمی پایین‌تر برای همهٔ سایزها */
 .helix-page .sessions-wrap{
   position: absolute !important;
   left: 4vw !important;
   right: 4vw !important;
-  top: 56vh !important; /* اگر باز پایین بود: 54 یا 52 */
+  top: 58vh !important; /* قبلاً 56vh → حدود 2cm پایین‌تر */
   bottom: auto !important;
   z-index: 4 !important;
 }
 
-/* لپ‌تاپ/دسکتاپ: کمی بالاتر */
+/* دسکتاپ/لپ‌تاپ: پایین‌تر به‌اندازه‌ی 2cm */
 @media (min-width: 1024px){
   .helix-page .sessions-wrap{
-    top: 52vh !important; /* در صورت نیاز 50vh هم می‌توانی بگذاری */
+    top: 54vh !important; /* قبلاً 52vh */
   }
 }
 
-/* موبایل: کارت‌ها کوتاه و کامل داخل صفحه + بالاتر آوردن نوار */
+/* موبایل: کمی پایین‌تر و کارت‌ها کوتاه */
 @media (max-width: 600px){
   .helix-page .sessions-wrap{
     left: 3vw !important;
     right: 3vw !important;
-    top: 49svh !important; /* اگر هنوز پایین بود: 47svh */
+    top: 51svh !important; /* قبلاً 49svh → حدود 2cm پایین‌تر */
     padding-bottom: 6px !important;
   }
 
@@ -44,8 +44,8 @@
     display: grid !important;
     grid-template-rows: min-content minmax(24px, auto) min-content !important;
     row-gap: 8px !important;
-    min-height: 120px !important; /* کوتاه */
-    max-height: 150px !important; /* جلوگیری از کشیدگی */
+    min-height: 120px !important;
+    max-height: 150px !important;
   }
 
   .helix-page .session-title{
@@ -67,7 +67,7 @@
     padding: 6px 10px !important;
   }
 
-  /* حذف هر هاله/سایه‌ی تیره زیر کارت‌ها در موبایل */
+  /* حذف سایه یا تیرگی زیر کارت‌ها در موبایل */
   .helix-page .helix-shade,
   .helix-page .helix-aurora{
     background: transparent !important;
