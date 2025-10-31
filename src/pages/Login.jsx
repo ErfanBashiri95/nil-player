@@ -13,8 +13,15 @@ export default function Login() {
   const navigate = useNavigate();
   const { login } = useAuth() || {};
 
-  // ---------- BACKGROUND: guaranteed preload + decode + fallback ----------
-  const FALLBACKS = ["/assets/galaxy_bg11.webp", "/assets/galaxy_bg11.png", "/assets/galaxy_bg11.jpg"];
+  // --------- بک‌گراند: fallback + تایمر اجباری ----------
+  // هر کدام موجود بود همان استفاده می‌شود
+  const FALLBACKS = [
+    "/assets/galaxy_bg11.webp",
+    "/assets/galaxy_bg11.png",
+    "/assets/galaxy_bg11.jpg",
+    "/assets/galaxy_bg.png",
+    "/assets/galaxy_bg1.png",
+  ];
   const [bgReady, setBgReady] = useState(false);
   const [bgUrl, setBgUrl] = useState("");
   const BASE_GRADIENT =
@@ -22,6 +29,12 @@ export default function Login() {
 
   useEffect(() => {
     let isMounted = true;
+
+    // اگر به هر دلیلی تصویر دیر بیاید، بعد از 1200ms صفحه را نشان بده
+    const safety = setTimeout(() => {
+      if (isMounted && !bgReady) setBgReady(true);
+    }, 1200);
+
     (async () => {
       for (const url of FALLBACKS) {
         try {
@@ -30,23 +43,28 @@ export default function Login() {
             img.src = url;
             const done = () => resolve();
             const fail = () => reject();
-            if (img.decode) img.decode().then(done).catch(() => img.complete ? done() : fail());
-            else img.onload = done, img.onerror = fail;
+            if (img.decode) img.decode().then(done).catch(() => (img.complete ? done() : fail()));
+            else (img.onload = done), (img.onerror = fail);
           });
           if (!isMounted) return;
           setBgUrl(url);
-          setBgReady(true);
+          setBgReady(true); // تصویر آماده شد → صفحه را نمایش بده
           break;
         } catch {
-          // try next fallback
+          // مسیر بعدی امتحان می‌شود
         }
       }
     })();
-    return () => { isMounted = false; };
-  }, []);
 
-  // ---------- Stars (only run after bgReady) ----------
-  // Speeds
+    return () => {
+      isMounted = false;
+      clearTimeout(safety);
+    };
+  }, []); // فقط یک بار
+
+  // --------- ستاره‌ها (بعد از آماده‌شدن بک‌گراند) ----------
+  // تغییر ۱: ستاره‌ها سفید
+  const STAR_COLOR = "rgba(255,255,255,0.92)";
   const GATHER_LERP = 0.03;
   const SCATTER_LERP = 0.03;
 
@@ -180,7 +198,6 @@ export default function Login() {
       targets = [...textPts, ...iconPts];
     }
 
-    const STAR_COLOR = "#061E47";
     const BG_COUNT = innerWidth < 600 ? 140 : 320;
     const TEXT_COUNT = innerWidth < 600 ? 1100 : 2000;
 
@@ -235,14 +252,14 @@ export default function Login() {
         const s = bgStars[i];
         s.x += (Math.random() - 0.5) * 0.25;
         s.y += (Math.random() - 0.5) * 0.25;
-        ctx.globalAlpha = 0.8 + Math.sin((i + tick) * 0.03) * 0.2;
+        ctx.globalAlpha = 0.85 + Math.sin((i + tick) * 0.03) * 0.15;
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = STAR_COLOR;
+        ctx.fillStyle = STAR_COLOR; // ← سفید
         ctx.fill();
       }
 
-      ctx.globalAlpha = 0.96;
+      ctx.globalAlpha = 0.98;
       const tLen = targets.length || 1;
       for (let i = 0; i < textStars.length; i++) {
         const s = textStars[i];
@@ -264,7 +281,7 @@ export default function Login() {
         }
         ctx.beginPath();
         ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = STAR_COLOR;
+        ctx.fillStyle = STAR_COLOR; // ← سفید
         ctx.fill();
       }
 
@@ -314,7 +331,6 @@ export default function Login() {
   const isSmall = typeof window !== "undefined" ? window.innerWidth < 640 : false;
   const formTop = isSmall ? "65%" : "72%";
 
-  // ---------- UI ----------
   return (
     <div
       style={{
@@ -323,17 +339,16 @@ export default function Login() {
         width: "100vw",
         height: "100vh",
         overflow: "hidden",
-        background: bgReady
+        background: bgUrl
           ? `url('${bgUrl}') center/cover no-repeat, ${BASE_GRADIENT}`
           : BASE_GRADIENT,
         transition: "background-image .2s ease, opacity .2s ease",
-        opacity: bgReady ? 1 : 1, // (می‌توانست 0.98 باشد؛ ثابت نگه داشتیم)
         zIndex: 0,
         direction: "rtl",
         fontFamily: "Vazirmatn, Vazir, system-ui, sans-serif",
       }}
     >
-      {/* فقط وقتی بکگراند آماده شد، این‌ها را نشان بده */}
+      {/* فقط وقتی آماده شد، ستاره‌ها و فرم نمایش داده شوند */}
       {bgReady && (
         <>
           <canvas
@@ -349,7 +364,6 @@ export default function Login() {
             }}
           />
 
-          {/* فرم ورود */}
           <div
             style={{
               position: "absolute",
@@ -425,9 +439,7 @@ export default function Login() {
         </>
       )}
 
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-      `}</style>
+      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
     </div>
   );
 }
