@@ -5,24 +5,11 @@ import "../styles/helix01.css";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
-/* جدیدها */
-import HeaderBar from "../components/HeaderBar";
-import PageLoader from "../components/PageLoader";
-import { preloadImage } from "../utils/preload";
-import { STR } from "../i18n/lang";
-
 export default function Helix01() {
   const { user } = useAuth();
-
-  // مودال پخش
-  const [modal, setModal] = useState(null); // { type,url,title, sessionId, initialTime, courseCode }
-
-  // داده‌های صفحه
+  const [modal, setModal] = useState(null); // { type,url,title, sessionId, initialTime }
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({}); // { [session_id]: {percent, last_position, completed} }
-
-  // لودر صفحه
-  const [ready, setReady] = useState(false);
 
   const openMedia = (type, url, title, sessionId) => {
     const p = progressMap[sessionId];
@@ -31,24 +18,20 @@ export default function Helix01() {
   };
   const closeModal = () => setModal(null);
 
-  // ESC برای بستن
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // خواندن جلسات + پیش‌لود بک‌گراند + آماده‌سازی صفحه
+  // جلسات
   useEffect(() => {
     (async () => {
-      const [_, { data, error }] = await Promise.all([
-        preloadImage("/assets/helix01_bg.png"),
-        supabase
-          .from("nilplayer_sessions")
-          .select("id, title, desc:desc, video_url, audio_url, order_index")
-          .eq("course_code", "HELIX01")
-          .order("order_index", { ascending: true }),
-      ]);
+      const { data, error } = await supabase
+        .from("nilplayer_sessions")
+        .select("id, title, desc:desc, video_url, audio_url, order_index")
+        .eq("course_code", "HELIX01")
+        .order("order_index", { ascending: true });
 
       if (!error && data) {
         setSessions(
@@ -63,13 +46,10 @@ export default function Helix01() {
       } else {
         console.error("fetch sessions error:", error);
       }
-
-      // یک مکث خیلی کوتاه برای جاافتادن فونت/استایل
-      setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // خواندن پیشرفت کاربر برای همین دوره و ساخت map
+  // پیشرفت کاربر
   useEffect(() => {
     if (!user || sessions.length === 0) return;
     (async () => {
@@ -100,20 +80,41 @@ export default function Helix01() {
     })();
   }, [user, sessions]);
 
+  // آیکن‌های SVG کوچک
+  const IconVideo = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ marginInlineStart: 4 }}>
+      <path fill="currentColor" d="M15 8v8H5a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h10zm2 .5l4-2.25v10.5L17 14.5z"/>
+    </svg>
+  );
+  const IconAudio = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ marginInlineStart: 4 }}>
+      <path fill="currentColor" d="M12 3a4 4 0 0 0-4 4v5a4 4 0 1 0 8 0V7a4 4 0 0 0-4-4zm-7 9a1 1 0 1 0-2 0 9 9 0 0 0 8 8.94V21a1 1 0 1 0-2 0v-.06A7 7 0 0 1 5 12zm16-1a1 1 0 0 1 2 0 9 9 0 0 1-8 8.94V21a1 1 0 0 1-2 0v-.06A7 7 0 0 0 21 11z"/>
+    </svg>
+  );
+
   return (
     <div className="helix-page">
-      {/* هدر ثابت: خروج + EN/FA */}
-      <HeaderBar />
-
       <div className="helix-bg" />
-      <StarOverlay />
+      {/* ⭐️ فقط نیمه بالایی صفحه: ماسک روی StarOverlay */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 50%, transparent 50%, transparent 100%)",
+          maskImage: "linear-gradient(to bottom, #000 0%, #000 50%, transparent 50%, transparent 100%)",
+          zIndex: 1
+        }}
+      >
+        <StarOverlay />
+      </div>
       <div className="helix-aurora" />
       <div className="helix-shade" />
 
-      <main className="helix-content" style={{ visibility: ready ? "visible" : "hidden" }}>
+      <main className="helix-content">
         <section className="helix-hero">
-          <h1 className="helix-title">{STR("helix01_title")}</h1>
-          <p className="helix-subtitle">{STR("subtitle")}</p>
+          <h1 className="helix-title">دوره فراگیری مربی‌گری مدار هِلیکس ۰۱</h1>
+          <p className="helix-subtitle">ویدئوهای ضبط‌شده و پادکست‌های جلسات</p>
         </section>
 
         <section className="sessions-wrap">
@@ -157,13 +158,13 @@ export default function Helix01() {
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
                     >
-                      {STR("video")}
+                      <IconVideo /> ویدئو
                     </button>
                     <button
                       className="btn btn-ghost"
                       onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
                     >
-                      {STR("podcast")}
+                      <IconAudio /> پادکست
                     </button>
                   </div>
                 </article>
@@ -172,9 +173,6 @@ export default function Helix01() {
           </div>
         </section>
       </main>
-
-      {/* لودر تمام‌صفحه */}
-      <PageLoader show={!ready} />
 
       {modal && (
         <MediaModal

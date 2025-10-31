@@ -5,19 +5,11 @@ import MediaModal from "../components/MediaModal";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
-/* جدیدها */
-import HeaderBar from "../components/HeaderBar";
-import PageLoader from "../components/PageLoader";
-import { preloadImage } from "../utils/preload";
-import { STR } from "../i18n/lang";
-
 export default function Helix02() {
   const { user } = useAuth();
-
-  const [modal, setModal] = useState(null); // { type,url,title, sessionId, initialTime, courseCode }
+  const [modal, setModal] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
-  const [ready, setReady] = useState(false);
 
   const openMedia = (type, url, title, sessionId) => {
     const p = progressMap[sessionId];
@@ -26,20 +18,14 @@ export default function Helix02() {
   };
   const closeModal = () => setModal(null);
 
-  // ESC برای بستن
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // خواندن جلسات + پیش‌لود بک‌گراند + آماده‌سازی صفحه
   useEffect(() => {
     (async () => {
-      await Promise.allSettled([
-        preloadImage("/assets/helix02_bg.png"), // اگر نبود، خطا بی‌اثر می‌شود
-      ]);
-
       const { data, error } = await supabase
         .from("nilplayer_sessions")
         .select("id, title, desc:desc, video_url, audio_url, order_index")
@@ -59,12 +45,9 @@ export default function Helix02() {
       } else {
         console.error("fetch sessions error:", error);
       }
-
-      setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // خواندن پیشرفت کاربر و ساخت map
   useEffect(() => {
     if (!user || sessions.length === 0) return;
     (async () => {
@@ -79,7 +62,6 @@ export default function Helix02() {
         console.error("fetch progress error:", error);
         return;
       }
-
       const map = {};
       for (const r of data || []) {
         const total = Number(r.total_seconds || 0);
@@ -95,20 +77,40 @@ export default function Helix02() {
     })();
   }, [user, sessions]);
 
+  const IconVideo = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ marginInlineStart: 4 }}>
+      <path fill="currentColor" d="M15 8v8H5a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h10zm2 .5l4-2.25v10.5L17 14.5z"/>
+    </svg>
+  );
+  const IconAudio = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style={{ marginInlineStart: 4 }}>
+      <path fill="currentColor" d="M12 3a4 4 0 0 0-4 4v5a4 4 0 1 0 8 0V7a4 4 0 0 0-4-4zm-7 9a1 1 0 1 0-2 0 9 9 0 0 0 8 8.94V21a1 1 0 1 0-2 0v-.06A7 7 0 0 1 5 12zm16-1a1 1 0 0 1 2 0 9 9 0 0 1-8 8.94V21a1 1 0 0 1-2 0v-.06A7 7 0 0 0 21 11z"/>
+    </svg>
+  );
+
   return (
     <div className="helix-page">
-      {/* هدر ثابت: خروج + EN/FA */}
-      <HeaderBar />
-
       <div className="helix-bg" />
-      <StarOverlay />
+      {/* ⭐️ فقط نیمه بالایی صفحه: ماسک روی StarOverlay */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          WebkitMaskImage: "linear-gradient(to bottom, #000 0%, #000 50%, transparent 50%, transparent 100%)",
+          maskImage: "linear-gradient(to bottom, #000 0%, #000 50%, transparent 50%, transparent 100%)",
+          zIndex: 1
+        }}
+      >
+        <StarOverlay />
+      </div>
       <div className="helix-aurora" />
       <div className="helix-shade" />
 
-      <main className="helix-content" style={{ visibility: ready ? "visible" : "hidden" }}>
+      <main className="helix-content">
         <section className="helix-hero">
-          <h1 className="helix-title">{STR("helix02_title")}</h1>
-          <p className="helix-subtitle">{STR("subtitle")}</p>
+          <h1 className="helix-title">دوره فراگیری مربی‌گری مدار هِلیکس ۰۲</h1>
+          <p className="helix-subtitle">ویدئوهای ضبط‌شده و پادکست‌های جلسات</p>
         </section>
 
         <section className="sessions-wrap">
@@ -117,10 +119,8 @@ export default function Helix02() {
               const p = progressMap[s.id];
               const percent = p?.percent ?? 0;
               const done = !!p?.completed || percent === 100;
-
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
-                  {/* Badge پیشرفت */}
                   <div
                     style={{
                       position: "absolute",
@@ -153,13 +153,13 @@ export default function Helix02() {
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
                     >
-                      {STR("video")}
+                      <IconVideo /> ویدئو
                     </button>
                     <button
                       className="btn btn-ghost"
                       onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
                     >
-                      {STR("podcast")}
+                      <IconAudio /> پادکست
                     </button>
                   </div>
                 </article>
@@ -168,9 +168,6 @@ export default function Helix02() {
           </div>
         </section>
       </main>
-
-      {/* لودر تمام‌صفحه */}
-      <PageLoader show={!ready} />
 
       {modal && (
         <MediaModal
