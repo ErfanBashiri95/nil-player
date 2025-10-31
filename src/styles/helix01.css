@@ -25,7 +25,7 @@
   pointer-events: none;
 }
 
-/* لایه‌ی سایه‌ی کلی (در موبایل شفاف می‌شود) */
+/* لایه‌ی سایه */
 .helix-shade {
   position: absolute;
   inset: 0;
@@ -34,21 +34,11 @@
   pointer-events: none;
 }
 
-/* فقط در موبایل، لایه‌ها شفاف */
-@media (max-width: 768px) {
-  .helix-shade,
-  .helix-aurora {
-    background: transparent !important;
-    backdrop-filter: none !important;
-    opacity: 1 !important;
-  }
-}
-
 /* محتوای اصلی */
 .helix-content {
   position: relative;
   z-index: 3;
-  padding: 100px 5vw 60px;
+  padding: 100px 5vw 100px; /* افزایش padding پایین برای دیده شدن کارت‌ها */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -81,6 +71,7 @@
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 20px;
   width: min(1200px, 90%);
+  margin-bottom: 50px;
 }
 
 /* کارت جلسه */
@@ -143,5 +134,23 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+/* حالت موبایل */
+@media (max-width: 768px) {
+  .sessions-wrap {
+    margin-bottom: 40px;
+  }
+
+  .helix-shade,
+  .helix-aurora {
+    background: transparent !important;
+    backdrop-filter: none !important;
+    opacity: 1 !important;
+  }
+
+  .helix-content {
+    padding-bottom: 80px !important;
   }
 }
