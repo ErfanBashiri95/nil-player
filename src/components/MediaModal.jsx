@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import Hls from "hls.js"; // ← NEW
 import { useAuth } from "../context/AuthContext";
 import { validateSecureURL } from "../utils/tokenUtils";
 import { saveProgress } from "../utils/progress";
@@ -7,6 +8,7 @@ export default function MediaModal({
   open, onClose, type, url, title, sessionId, initialTime, courseCode
 }) {
   const { user } = useAuth();
+
   const [playbackRate, setPlaybackRate] = useState(1);
   const [wmVisible, setWmVisible] = useState(false);
   const [wmPos, setWmPos] = useState({ top: "20%", left: "30%" });
@@ -15,26 +17,21 @@ export default function MediaModal({
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
+  const hlsRef = useRef(null); // ← NEW
 
-  // برای محاسبهٔ درصد تماشا
+  // progress state
   const [duration, setDuration] = useState(0);
   const [maxSeen, setMaxSeen] = useState(0);
   const lastSentRef = useRef(0);
-  const shouldSend = (now) => {
-    if (now - lastSentRef.current > 5000) { // هر ~۵ ثانیه
-      lastSentRef.current = now;
-      return true;
-    }
-    return false;
-  };
+  const shouldSend = (now) => (now - lastSentRef.current > 5000 ? (lastSentRef.current = now, true) : false);
 
-  // اعتبار لینک
+  // validate url
   useEffect(() => {
     if (!open || !url) return;
     setExpired(!validateSecureURL(url));
   }, [url, open]);
 
-  // واترمارک پویا
+  // floating watermark
   useEffect(() => {
     if (!open) return;
     const tick = () => {
@@ -49,7 +46,7 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // ضد ضبط صفحه (best-effort)
+  // basic screen-capture guard (best-effort)
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
@@ -63,22 +60,192 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // بستن با ESC
+  // close on ESC
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // شروع از ادامه
+  // ===== HLS setup (VIDEO) =====
   useEffect(() => {
-    if (!open) return;
-    const el = type === "video" ? videoRef.current : audioRef.current;
-    if (el && typeof initialTime === "number" && initialTime > 0) {
-      const once = () => { el.currentTime = initialTime; el.removeEventListener("loadedmetadata", once); };
-      el.addEventListener("loadedmetadata", once);
+    if (!open || type !== "video") return;
+
+    const video = videoRef.current;
+    if (!video) return;
+
+    const isHls = typeof url === "string" && url.includes(".m3u8");
+
+    // cleanup function
+    const cleanup = () => {
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch {}
+        hlsRef.current = null;
+      }
+      // remove listeners we add below
+      video.removeEventListener("loadedmetadata", onLoadedMeta);
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("ended", onEnded);
+    };
+
+    const onLoadedMeta = () => {
+      const d = video.duration || 0;
+      setDuration(d);
+      // jump to last position if any
+      if (typeof initialTime === "number" && initialTime > 0) {
+        video.currentTime = initialTime;
+      }
+      // send initial row with totalSeconds
+      saveProgress({
+        username: user?.username,
+        courseCode, sessionId,
+        lastPosition: initialTime || 0,
+        watchedSeconds: initialTime || 0,
+        totalSeconds: d,
+        completed: false,
+      });
+      // auto play
+      video.play().catch(() => {});
+    };
+
+    const onTime = () => {
+      const t = video.currentTime || 0;
+      const d = video.duration || duration || 0;
+      setMaxSeen((prev) => Math.max(prev, t));
+      if (shouldSend(performance.now())) {
+        saveProgress({
+          username: user?.username,
+          courseCode, sessionId,
+          lastPosition: t,
+          watchedSeconds: Math.max(maxSeen, t),
+          totalSeconds: d,
+          completed: false,
+        });
+      }
+    };
+    const onPause = () => {
+      const t = video.currentTime || 0;
+      const d = video.duration || duration || 0;
+      saveProgress({
+        username: user?.username,
+        courseCode, sessionId,
+        lastPosition: t,
+        watchedSeconds: Math.max(maxSeen, t),
+        totalSeconds: d,
+        completed: false,
+      });
+    };
+    const onEnded = () => {
+      const d = video.duration || duration || 0;
+      saveProgress({
+        username: user?.username,
+        courseCode, sessionId,
+        lastPosition: d,
+        watchedSeconds: d,
+        totalSeconds: d,
+        completed: true,
+      });
+    };
+
+    // attach listeners
+    video.addEventListener("loadedmetadata", onLoadedMeta);
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("ended", onEnded);
+
+    // HLS path
+    if (isHls) {
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 60,
+        });
+        hlsRef.current = hls;
+        hls.attachMedia(video);
+        hls.loadSource(url);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          // metadata may not fire on some streams until play:
+          if (video.readyState >= 1) onLoadedMeta();
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari/iOS
+        video.src = url;
+      } else {
+        console.warn("HLS not supported on this browser.");
+        video.src = ""; // avoid dead state
+      }
+    } else {
+      // MP4 or others
+      video.src = url;
     }
-  }, [open, type, initialTime]);
+
+    // cleanup on modal close/unmount/change
+    return cleanup;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, type, url, sessionId, courseCode, initialTime, user?.username]);
+
+  // ===== AUDIO progress =====
+  useEffect(() => {
+    if (!open || type !== "audio") return;
+    const el = audioRef.current;
+    if (!el) return;
+
+    const onLoaded = () => {
+      const d = el.duration || 0;
+      setDuration(d);
+      if (typeof initialTime === "number" && initialTime > 0) el.currentTime = initialTime;
+      saveProgress({
+        username: user?.username,
+        courseCode, sessionId,
+        lastPosition: initialTime || 0,
+        watchedSeconds: initialTime || 0,
+        totalSeconds: d, completed: false,
+      });
+    };
+    const onTime = () => {
+      const t = el.currentTime || 0;
+      const d = el.duration || duration || 0;
+      setMaxSeen((p) => Math.max(p, t));
+      if (shouldSend(performance.now())) {
+        saveProgress({
+          username: user?.username, courseCode, sessionId,
+          lastPosition: t, watchedSeconds: Math.max(maxSeen, t),
+          totalSeconds: d, completed: false,
+        });
+      }
+    };
+    const onPause = () => {
+      const t = el.currentTime || 0;
+      const d = el.duration || duration || 0;
+      saveProgress({
+        username: user?.username, courseCode, sessionId,
+        lastPosition: t, watchedSeconds: Math.max(maxSeen, t),
+        totalSeconds: d, completed: false,
+      });
+    };
+    const onEnded = () => {
+      const d = el.duration || duration || 0;
+      saveProgress({
+        username: user?.username, courseCode, sessionId,
+        lastPosition: d, watchedSeconds: d, totalSeconds: d, completed: true,
+      });
+    };
+
+    el.addEventListener("loadedmetadata", onLoaded);
+    el.addEventListener("timeupdate", onTime);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnded);
+
+    return () => {
+      el.removeEventListener("loadedmetadata", onLoaded);
+      el.removeEventListener("timeupdate", onTime);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnded);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, type, url, sessionId, courseCode, initialTime, user?.username]);
 
   const applyRate = (r) => {
     setPlaybackRate(r);
@@ -107,61 +274,13 @@ export default function MediaModal({
         <span style={S.pillsLabel}>سرعت پخش:</span>
         <div style={S.pillsWrap}>
           {presets.map((r) => (
-            <button
-              key={r}
-              onClick={() => onChange(r)}
-              style={{ ...S.pill, ...(value === r ? S.pillActive : null) }}
-            >
+            <button key={r} onClick={() => onChange(r)} style={{ ...S.pill, ...(value === r ? S.pillActive : null) }}>
               {r}x
             </button>
           ))}
         </div>
       </div>
     );
-  };
-
-  const handleTimeLike = (current, elDuration) => {
-    const t = current || 0;
-    const d = elDuration || duration || 0;
-    setMaxSeen((prev) => Math.max(prev, t));
-    if (shouldSend(performance.now())) {
-      saveProgress({
-        username: user?.username,
-        courseCode,
-        sessionId,
-        lastPosition: t,
-        watchedSeconds: Math.max(maxSeen, t),
-        totalSeconds: d,
-        completed: false,
-      });
-    }
-  };
-
-  const handlePauseLike = (current, elDuration) => {
-    const t = current || 0;
-    const d = elDuration || duration || 0;
-    saveProgress({
-      username: user?.username,
-      courseCode,
-      sessionId,
-      lastPosition: t,
-      watchedSeconds: Math.max(maxSeen, t),
-      totalSeconds: d,
-      completed: false,
-    });
-  };
-
-  const handleEndedLike = (elDuration) => {
-    const d = elDuration || duration || 0;
-    saveProgress({
-      username: user?.username,
-      courseCode,
-      sessionId,
-      lastPosition: d,
-      watchedSeconds: d,
-      totalSeconds: d,
-      completed: true,
-    });
   };
 
   return (
@@ -171,7 +290,6 @@ export default function MediaModal({
       style={S.overlay}
     >
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
-        {/* هدر */}
         <div style={S.header}>
           <div style={S.headLeft}>
             <div style={S.mediaBadge}>{type === "video" ? "🎬 ویدئو" : "🎧 پادکست"}</div>
@@ -180,79 +298,38 @@ export default function MediaModal({
           <button onClick={onClose} aria-label="بستن" style={S.closeBtn}>×</button>
         </div>
 
-        {/* بدنه */}
         {type === "video" ? (
           <div style={{ position: "relative" }}>
             <video
               ref={videoRef}
-              src={url}
-              controls
-              playsInline
-              autoPlay
+              // src برای HLS توسط hls.js ست می‌شود
+              controls playsInline autoPlay
               controlsList="nodownload noremoteplayback"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
+              crossOrigin="anonymous"
               style={S.video}
-              onLoadedMetadata={(e) => {
-                const d = e.currentTarget.duration || 0;
-                setDuration(d);
-                // ذخیرهٔ اولیهٔ مدت
-                saveProgress({
-                  username: user?.username,
-                  courseCode,
-                  sessionId,
-                  lastPosition: initialTime || 0,
-                  watchedSeconds: initialTime || 0,
-                  totalSeconds: d,
-                  completed: false,
-                });
-              }}
-              onTimeUpdate={(e) => handleTimeLike(e.currentTarget.currentTime, e.currentTarget.duration)}
-              onPause={(e) => handlePauseLike(e.currentTarget.currentTime, e.currentTarget.duration)}
-              onEnded={(e) => handleEndedLike(e.currentTarget.duration)}
             />
-
-            {/* واترمارک */}
             {user?.username && (
-              <div
-                style={{
-                  position: "absolute",
-                  ...wmPos,
-                  opacity: wmVisible ? 0.4 : 0,
-                  transform: wmVisible ? "scale(1)" : "scale(0.96)",
-                  transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
-                  color: "#fff",
-                  fontWeight: 700,
-                  fontSize: "clamp(12px, 1.8vw, 16px)",
-                  pointerEvents: "none",
-                  userSelect: "none",
-                  textShadow: "0 0 10px rgba(0,0,0,0.7)",
-                }}
-              >
-                {`${user.username} • ${new Date().toLocaleTimeString("fa-IR", {
-                  hour: "2-digit", minute: "2-digit", second: "2-digit"
-                })}`}
+              <div style={{
+                position: "absolute", ...wmPos,
+                opacity: wmVisible ? 0.4 : 0,
+                transform: wmVisible ? "scale(1)" : "scale(0.96)",
+                transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
+                color: "#fff", fontWeight: 700, fontSize: "clamp(12px, 1.8vw, 16px)",
+                pointerEvents: "none", userSelect: "none", textShadow: "0 0 10px rgba(0,0,0,.7)",
+              }}>
+                {`${user.username} • ${new Date().toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`}
               </div>
             )}
-
-            {/* هشدار ضبط صفحه */}
             {warning && (
-              <div style={S.warn}>
-                ⚠️ ضبط صفحه شناسایی شد!
+              <div style={S.warn}>⚠️ ضبط صفحه شناسایی شد!
                 <br />لطفاً ضبط را متوقف کنید.
               </div>
             )}
-
-            {/* سرعت پخش */}
             <div style={S.fabRate}>
-              <select
-                value={playbackRate}
-                onChange={(e) => applyRate(Number(e.target.value))}
-                style={S.fabSelect}
-              >
-                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
-                  <option key={s} value={s}>{s}x</option>
-                ))}
+              <select value={playbackRate} onChange={(e) => applyRate(Number(e.target.value))} style={S.fabSelect}>
+                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => <option key={s} value={s}>{s}x</option>)}
               </select>
             </div>
           </div>
@@ -261,33 +338,15 @@ export default function MediaModal({
             <audio
               ref={audioRef}
               src={url}
-              controls
-              autoPlay
+              controls autoPlay
               controlsList="nodownload noremoteplayback"
               onContextMenu={(e) => e.preventDefault()}
               style={S.audio}
-              onLoadedMetadata={(e) => {
-                const d = e.currentTarget.duration || 0;
-                setDuration(d);
-                saveProgress({
-                  username: user?.username,
-                  courseCode,
-                  sessionId,
-                  lastPosition: initialTime || 0,
-                  watchedSeconds: initialTime || 0,
-                  totalSeconds: d,
-                  completed: false,
-                });
-              }}
-              onTimeUpdate={(e) => handleTimeLike(e.currentTarget.currentTime, e.currentTarget.duration)}
-              onPause={(e) => handlePauseLike(e.currentTarget.currentTime, e.currentTarget.duration)}
-              onEnded={(e) => handleEndedLike(e.currentTarget.duration)}
             />
             <SpeedPills value={playbackRate} onChange={applyRate} />
           </div>
         )}
       </div>
-
       <style>{`@keyframes fadeIn {from{opacity:0} to{opacity:1}}`}</style>
     </div>
   );
@@ -346,60 +405,28 @@ const S = {
     color: "#fff", fontSize: 20, cursor: "pointer",
     boxShadow: "0 4px 14px rgba(0,0,0,.35)",
   },
-  video: {
-    width: "100%", borderRadius: 14, background: "#000",
-    outline: "1px solid rgba(255,255,255,.06)",
-  },
+  video: { width: "100%", borderRadius: 14, background: "#000", outline: "1px solid rgba(255,255,255,.06)" },
   warn: {
-    position: "absolute", inset: 0,
-    background: "rgba(0,0,0,.75)", color: "#ff5a5a",
+    position: "absolute", inset: 0, background: "rgba(0,0,0,.75)", color: "#ff5a5a",
     fontWeight: 800, fontSize: "clamp(14px, 2vw, 18px)",
     display: "flex", alignItems: "center", justifyContent: "center",
     textAlign: "center", zIndex: 10, backdropFilter: "blur(8px)",
   },
   fabRate: {
     position: "absolute", top: 10, right: 10,
-    background: "rgba(0,0,0,.45)",
-    border: "1px solid rgba(255,255,255,.22)",
-    borderRadius: 12, padding: "2px 6px",
-    boxShadow: "0 6px 14px rgba(0,0,0,.35)",
+    background: "rgba(0,0,0,.45)", border: "1px solid rgba(255,255,255,.22)",
+    borderRadius: 12, padding: "2px 6px", boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
-  fabSelect: {
-    background: "transparent", color: "#0B1A3A",
-    border: "none", fontSize: 13, outline: "none", cursor: "pointer",
-  },
-  audioBox: {
-    background: "rgba(255,255,255,.05)",
-    border: "1px solid rgba(255,255,255,.12)",
-    borderRadius: 14,
-    padding: 12,
-  },
-  audio: {
-    width: "100%", accentColor: "#1A83CC",
-    filter: "saturate(1.05)",
-  },
-  pillsRow: {
-    display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap",
-  },
+  fabSelect: { background: "transparent", color: "#0B1A3A", border: "none", fontSize: 13, outline: "none", cursor: "pointer" },
+  audioBox: { background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: 12 },
+  audio: { width: "100%", accentColor: "#1A83CC", filter: "saturate(1.05)" },
+  pillsRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" },
   pillsLabel: { fontSize: 13, opacity: .9, whiteSpace: "nowrap" },
   pillsWrap: { display: "flex", gap: 6, flexWrap: "wrap" },
   pill: {
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(255,255,255,.08)",
-    border: "1px solid rgba(255,255,255,.18)",
-    color: "#fff",
-    fontSize: 12.5, fontWeight: 800,
-    cursor: "pointer",
+    padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,.08)",
+    border: "1px solid rgba(255,255,255,.18)", color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer",
   },
-  pillActive: {
-    background: "linear-gradient(90deg,#1A83CC,#2CA7E3)",
-    borderColor: "rgba(255,255,255,.35)",
-    boxShadow: "0 6px 16px rgba(26,131,204,.35)",
-  },
-  primaryBtn: {
-    marginTop: 16, padding: "8px 14px",
-    background: "#1A83CC", color: "#fff",
-    borderRadius: 10, border: "none", cursor: "pointer",
-  },
+  pillActive: { background: "linear-gradient(90deg,#1A83CC,#2CA7E3)", borderColor: "rgba(255,255,255,.35)", boxShadow: "0 6px 16px rgba(26,131,204,.35)" },
+  primaryBtn: { marginTop: 16, padding: "8px 14px", background: "#1A83CC", color: "#fff", borderRadius: 10, border: "none", cursor: "pointer" },
 };
