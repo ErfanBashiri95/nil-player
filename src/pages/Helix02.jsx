@@ -203,7 +203,7 @@ export default function Helix02() {
                       <span
                         aria-hidden="true"
                         style={{
-                          fontSize: isMobile ? 6 : 16,
+                          fontSize: isMobile ? 4 : 16,
                           lineHeight: 1,
                           marginLeft: 4,
                         }}
