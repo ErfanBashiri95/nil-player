@@ -173,13 +173,13 @@ export default function Helix02() {
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 4,
-                        fontSize: isMobile ? 10 : 18,
+                        fontSize: isMobile ? 8 : 18,
                       }}
                     >
                       <span
                         aria-hidden="true"
                         style={{
-                          fontSize: isMobile ? 12 : 16,
+                          fontSize: isMobile ? 8 : 16,
                           lineHeight: 1,
                           marginLeft: 4,
                         }}
@@ -197,13 +197,13 @@ export default function Helix02() {
                         alignItems: "center",
                         justifyContent: "center",
                         gap: 4,
-                        fontSize: isMobile ? 10 : 18,
+                        fontSize: isMobile ? 8 : 18,
                       }}
                     >
                       <span
                         aria-hidden="true"
                         style={{
-                          fontSize: isMobile ? 12 : 16,
+                          fontSize: isMobile ? 8 : 16,
                           lineHeight: 1,
                           marginLeft: 4,
                         }}
