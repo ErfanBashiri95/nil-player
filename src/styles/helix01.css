@@ -38,7 +38,7 @@
 .helix-content {
   position: relative;
   z-index: 3;
-  padding: 100px 5vw 100px; /* افزایش padding پایین برای دیده شدن کارت‌ها */
+  padding: 100px 5vw 100px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -137,21 +137,29 @@
   }
 }
 
-/* حالت موبایل */
-@media (max-width: 768px) {
+/* --- Mobile: رفع نوار تیره و بالاتر بردن کارت‌ها --- */
+@media (max-width: 600px) {
   .sessions-wrap {
-    margin-top:-40px;
-    margin-bottom: 0;
+    position: absolute !important;
+    left: 3vw !important;
+    right: 3vw !important;
+    bottom: auto !important;
+    top: calc(56svh - 8px) !important; /* کارت‌ها بالاتر میان؛ درصورت نیاز 56svh→52svh */
+    padding-bottom: 8px !important;
   }
 
-  .helix-shade,
-  .helix-aurora {
+  .helix-shade {
     background: transparent !important;
     backdrop-filter: none !important;
     opacity: 1 !important;
   }
 
+  .helix-aurora {
+    background: transparent !important;
+    opacity: 1 !important;
+  }
+
   .helix-content {
-    padding-bottom: 40px !important;
+    padding-bottom: 20px !important;
   }
 }
