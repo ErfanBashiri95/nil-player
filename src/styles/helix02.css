@@ -355,7 +355,7 @@
     }
   
     /* دکمه‌ها هم کمی درشت‌تر تا شارپ‌تر دیده بشن */
-    .btn { font-size: 12.5px !important; }
+    .btn { font-size: 10px !important; }
   
     /* جلوگیری از رندر تار داخل لیست اسکرولی */
     .sessions-strip {
