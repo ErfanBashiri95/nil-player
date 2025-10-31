@@ -169,14 +169,14 @@ export default function Helix02() {
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
                     >
-                      <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, marginLeft: 6 }}>🎬</span>
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
                       {STR("video")}
                     </button>
                     <button
                       className="btn btn-ghost"
                       onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
                     >
-                      <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, marginLeft: 6 }}>🎧</span>
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎧</span>
                       {STR("podcast")}
                     </button>
                   </div>
