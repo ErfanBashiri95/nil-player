@@ -192,3 +192,30 @@
     margin-left: 4px !important;
   }
 }
+/* ======= Global Font Fix (Desktop English text) ======= */
+
+/* اعمال فونت وزیر برای کل بدنه (فارسی) */
+body, .helix-page {
+  font-family: "Vazir", system-ui, sans-serif !important;
+}
+
+/* اعمال فونت Inter برای متون انگلیسی */
+:lang(en),
+button:lang(en),
+.btn,
+.helix-page [lang="en"],
+.helix-page button,
+.helix-page input,
+.helix-page select {
+  font-family: "Inter", "Vazir", system-ui, sans-serif !important;
+  letter-spacing: 0.2px;
+}
+
+/* مخصوص دکمه‌های EN و خروج */
+.HeaderBar,
+.HeaderBar button,
+.HeaderBar span,
+button,
+.btn span {
+  font-family: "Inter", "Vazir", system-ui, sans-serif !important;
+}
