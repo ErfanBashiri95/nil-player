@@ -19,6 +19,7 @@ export default function Helix01() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0); // برای Remount مطمئن
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -34,14 +35,14 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // فقط با username + course_code می‌گیریم (دیگه منتظر sessions نیستیم)
   const reloadProgress = useCallback(async () => {
-    if (!user?.username) return;
+    if (!user || sessions.length === 0) return;
+    const ids = sessions.map((s) => s.id);
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
       .eq("username", user.username)
-      .eq("course_code", "HELIX01");
+      .in("session_id", ids);
 
     if (error) { console.error("fetch progress error:", error); return; }
 
@@ -57,12 +58,22 @@ export default function Helix01() {
       };
     }
     setProgressMap(map);
-  }, [user?.username]);
+  }, [user, sessions]);
 
-  // همگام‌سازی روی تغییر وضعیت احراز هویت و فوکِس/ویزیبیلیتی
+  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") reloadProgress();
+      if (evt.event === "SIGNED_OUT") {
+        setRefreshKey((k) => k + 1);
+      }
+      if (evt.event === "SIGNED_IN") {
+        setRefreshKey((k) => k + 1);
+        // اول تلاش برای لود، بعد ریفرش نرم برای اطمینان
+        reloadProgress();
+        setTimeout(() => {
+          try { window.location.replace(window.location.href); } catch {}
+        }, 120);
+      }
     });
 
     const onFocus = () => reloadProgress();
@@ -86,14 +97,12 @@ export default function Helix01() {
     reloadProgress();
   };
 
-  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closeModal]);
 
-  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -114,17 +123,14 @@ export default function Helix01() {
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
-
-  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page">
+    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
       <HeaderBar />
       <div className="helix-bg" />
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
