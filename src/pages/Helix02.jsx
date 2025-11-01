@@ -19,7 +19,9 @@ export default function Helix02() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // Remount
+
+  // برای Remount امن بعد از SIGNED_IN و بستن مدیا
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -60,18 +62,27 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user, sessions]);
 
-  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
+  const refreshAfterSignIn = useCallback(async () => {
+    try {
+      await new Promise(r => setTimeout(r, 350));
+      await supabase.auth.getSession();
+      setRefreshKey(k => k + 1);
+      await reloadProgress();
+    } catch (e) {
+      console.warn("post-login refresh failed:", e);
+      setRefreshKey(k => k + 1);
+      await reloadProgress();
+    }
+  }, [reloadProgress]);
+
+  // auto refresh hooks
   useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_OUT") {
-        setRefreshKey((k) => k + 1);
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_OUT") {
+        setProgressMap({});
       }
-      if (evt.event === "SIGNED_IN") {
-        setRefreshKey((k) => k + 1);
-        reloadProgress();
-        setTimeout(() => {
-          try { window.location.replace(window.location.href); } catch {}
-        }, 120);
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        await refreshAfterSignIn();
       }
     });
 
@@ -84,15 +95,16 @@ export default function Helix02() {
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
-      sub?.data?.subscription?.unsubscribe?.();
+      sub?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [reloadProgress]);
+  }, [reloadProgress, refreshAfterSignIn]);
 
   const closeModal = () => {
     setModal(null);
+    setRefreshKey(k => k + 1);
     reloadProgress();
   };
 
@@ -132,13 +144,14 @@ export default function Helix02() {
   }, []);
 
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
+
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
+    <div className="helix-page" key={refreshKey}>
       <HeaderBar />
       <div className="helix-bg" />
 
@@ -212,7 +225,7 @@ export default function Helix02() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={() => { setModal(null); reloadProgress(); }}
+          onClose={closeModal}
           type={modal.type}
           url={modal.url}
           title={modal.title}
