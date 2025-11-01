@@ -4,8 +4,6 @@ import MediaModal from "../components/MediaModal";
 import "../styles/helix01.css";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
-
-/* جدیدها */
 import HeaderBar from "../components/HeaderBar";
 import PageLoader from "../components/PageLoader";
 import { preloadImage } from "../utils/preload";
@@ -14,23 +12,17 @@ import { STR } from "../i18n/lang";
 export default function Helix01() {
   const { user } = useAuth();
 
-  // مودال پخش
   const [modal, setModal] = useState(null); // { type,url,title, sessionId, initialTime, courseCode }
-
-  // داده‌های صفحه
   const [sessions, setSessions] = useState([]);
-  const [progressMap, setProgressMap] = useState({}); // { [session_id]: {percent, last_position, completed} }
-
-  // لودر صفحه
+  const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
   const openMedia = (type, url, title, sessionId) => {
     const p = progressMap[sessionId];
-    const initialTime = p?.last_position ? Number(p.last_position) : 0;
+    const initialTime = p?.last_position ? Number(p.last_position) : 0; // فقط برای ویدئو مصرف می‌شود
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // --- رفرش پیشرفت: قابل استفاده هر زمان ---
   const reloadProgress = useCallback(async () => {
     if (!user || sessions.length === 0) return;
     const ids = sessions.map((s) => s.id);
@@ -40,43 +32,31 @@ export default function Helix01() {
       .eq("username", user.username)
       .in("session_id", ids);
 
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
+    if (error) { console.error("fetch progress error:", error); return; }
 
     const map = {};
     for (const r of data || []) {
-      // فقط ویدئو در درصد لحاظ شود (media_type === 'video')
       const total = Number(r.total_seconds || 0);
       const base = Number(r.watched_seconds || r.last_position || 0);
-      const percent =
-        r.media_type === "video" && total > 0
-          ? Math.min(100, Math.round((base / total) * 100))
-          : 0;
+      const isVideoRow = r.media_type ? r.media_type === "video" : true; // اگر ستون نبود، ویدئو فرض کن
+      const percent = isVideoRow && total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
       map[r.session_id] = {
         percent,
         last_position: Number(r.last_position || 0),
-        completed: !!r.completed && r.media_type === "video",
+        completed: !!r.completed && isVideoRow,
       };
     }
     setProgressMap(map);
   }, [user, sessions]);
 
-  const closeModal = () => {
-    setModal(null);
-    // بعد از بستن مدیا، یک بار وضعیت را تازه کن
-    reloadProgress();
-  };
+  const closeModal = () => { setModal(null); reloadProgress(); };
 
-  // ESC برای بستن
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [closeModal]);
+  }, []);
 
-  // خواندن جلسات + پیش‌لود بک‌گراند + آماده‌سازی صفحه
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -87,31 +67,25 @@ export default function Helix01() {
           .eq("course_code", "HELIX01")
           .order("order_index", { ascending: true }),
       ]);
-
       if (!error && data) {
-        setSessions(
-          data.map((s) => ({
-            id: s.id,
-            title: s.title,
-            desc: s.desc,
-            videoUrl: s.video_url,
-            audioUrl: s.audio_url,
-          }))
-        );
-      } else {
-        console.error("fetch sessions error:", error);
-      }
-
+        setSessions(data.map((s) => ({
+          id: s.id, title: s.title, desc: s.desc, videoUrl: s.video_url, audioUrl: s.audio_url,
+        })));
+      } else { console.error("fetch sessions error:", error); }
       setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // وقتی user یا sessions عوض شد، پیشرفت را بگیر
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+
+  // بلادرنگ: وقتی MediaModal ذخیره کرد، کارت‌ها را تازه کن
   useEffect(() => {
-    reloadProgress();
+    const onProg = () => reloadProgress();
+    window.addEventListener("nilplayer:progress-updated", onProg);
+    return () => window.removeEventListener("nilplayer:progress-updated", onProg);
   }, [reloadProgress]);
 
-  // پولینگ هر ۱۰ ثانیه برای همگام‌بودن خودکار
+  // پولینگ هر ۱۰ ثانیه (پشتوانه)
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
@@ -122,7 +96,6 @@ export default function Helix01() {
       <HeaderBar />
 
       <div className="helix-bg" />
-      {/* ستاره‌ها فقط نیمهٔ بالا */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
         <StarOverlay />
       </div>
@@ -143,23 +116,12 @@ export default function Helix01() {
               const done = !!p?.completed || percent === 100;
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
-                  {/* Badge پیشرفت (فقط ویدئو) */}
                   <div
                     style={{
-                      position: "absolute",
-                      top: 8,
-                      left: 8,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#fff",
+                      position: "absolute", top: 8, left: 8, display: "inline-flex", alignItems: "center",
+                      gap: 6, padding: "4px 8px", borderRadius: 999, fontSize: 12, fontWeight: 800, color: "#fff",
                       background: done ? "linear-gradient(90deg,#16a34a,#22c55e)" : "rgba(255,255,255,.18)",
-                      border: "1px solid rgba(255,255,255,.28)",
-                      backdropFilter: "blur(4px)",
+                      border: "1px solid rgba(255,255,255,.28)", backdropFilter: "blur(4px)",
                     }}
                     title={done ? "کامل دیده شده" : "درصد تماشا (فقط ویدئو)"}
                   >
