@@ -13,12 +13,25 @@ import { STR } from "../i18n/lang";
 import { getProgress } from "../utils/progress";
 
 export default function Helix01() {
-  const { user, authReady } = useAuth();
+  const { user } = useAuth();
 
   const [modal, setModal] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
+
+  // --- ریفرش خودکار یک‌بار بعد از حاضر شدن کاربر ---
+  useEffect(() => {
+    if (!user?.username) return;
+    const key = `nil_auto_refresh_once::${user.username}::${window.location.pathname}`;
+    try {
+      const already = sessionStorage.getItem(key);
+      if (!already) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+      }
+    } catch {}
+  }, [user?.username]);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -34,9 +47,9 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // فقط با username + course_code بگیر (وابسته به sessions نیست)
+  // فقط با username + course_code می‌گیریم (دیگه منتظر sessions نیستیم)
   const reloadProgress = useCallback(async () => {
-    if (!authReady || !user?.username) return;
+    if (!user?.username) return;
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
@@ -57,37 +70,41 @@ export default function Helix01() {
       };
     }
     setProgressMap(map);
-  }, [authReady, user?.username]);
+  }, [user?.username]);
 
-  const closeModal = () => {
-    setModal(null);
-    reloadProgress();
-    // ریفچ کمکی کمی بعد (جلوگیری از عقب افتادن UI)
-    setTimeout(() => reloadProgress(), 350);
-  };
-
-  // گوش دادن به لاگین/لاگ‌اوت و آپدیت‌های پرگرس
+  // همگام‌سازی روی تغییر وضعیت احراز هویت و فوکِس/ویزیبیلیتی
   useEffect(() => {
-    const onLogin = () => { reloadProgress(); setTimeout(() => reloadProgress(), 300); };
-    const onLogout = () => { setProgressMap({}); };
+    const sub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_IN") reloadProgress();
+    });
+
     const onFocus = () => reloadProgress();
     const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
     const onProgressEvent = () => reloadProgress();
 
-    window.addEventListener("nil-auth:login", onLogin);
-    window.addEventListener("nil-auth:logout", onLogout);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
-      window.removeEventListener("nil-auth:login", onLogin);
-      window.removeEventListener("nil-auth:logout", onLogout);
+      sub?.data?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
   }, [reloadProgress]);
+
+  const closeModal = () => {
+    setModal(null);
+    reloadProgress();
+  };
+
+  // ESC
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && closeModal();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeModal]);
 
   // جلسات + بک‌گراند
   useEffect(() => {
@@ -110,13 +127,8 @@ export default function Helix01() {
     })();
   }, []);
 
-  // وقتی authReady شد یا user تغییر کرد، فوراً بگیر + ریفچ کمکی
-  useEffect(() => {
-    if (!authReady) return;
-    reloadProgress();
-    const t = setTimeout(() => reloadProgress(), 300);
-    return () => clearTimeout(t);
-  }, [authReady, user?.username, reloadProgress]);
+  // با تغییر یوزر فوراً بگیر
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
 
   // پولینگ ملایم
   useEffect(() => {
@@ -125,7 +137,7 @@ export default function Helix01() {
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page" key={user?.username || "anon"}>
+    <div className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
