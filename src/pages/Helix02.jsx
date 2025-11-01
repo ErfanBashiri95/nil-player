@@ -10,17 +10,16 @@ import HeaderBar from "../components/HeaderBar";
 import PageLoader from "../components/PageLoader";
 import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
-import { getProgress } from "../utils/progress"; // ← NEW
+import { getProgress } from "../utils/progress";
 
 export default function Helix02() {
   const { user } = useAuth();
 
-  const [modal, setModal] = useState(null); // { type,url,title, sessionId, initialTime, courseCode }
+  const [modal, setModal] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // باز کردن مدیا با گرفتن آخرین موقعیت از map یا DB (برای ویدئو)
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
     if (type === "video") {
@@ -44,10 +43,7 @@ export default function Helix02() {
       .eq("username", user.username)
       .in("session_id", ids);
 
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
+    if (error) { console.error("fetch progress error:", error); return; }
 
     const map = {};
     for (const r of data || []) {
@@ -62,6 +58,27 @@ export default function Helix02() {
     }
     setProgressMap(map);
   }, [user, sessions]);
+
+  // auto refresh hooks
+  useEffect(() => {
+    const unsub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_IN") reloadProgress();
+    });
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
+
+    return () => {
+      unsub?.data?.subscription?.unsubscribe?.();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+    };
+  }, [reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
@@ -103,10 +120,7 @@ export default function Helix02() {
     })();
   }, []);
 
-  useEffect(() => {
-    reloadProgress();
-  }, [reloadProgress]);
-
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
@@ -115,7 +129,6 @@ export default function Helix02() {
   return (
     <div className="helix-page">
       <HeaderBar />
-
       <div className="helix-bg" />
 
       {/* ستاره‌ها فقط نیمهٔ بالایی */}

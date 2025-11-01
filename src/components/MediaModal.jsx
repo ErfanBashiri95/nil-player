@@ -4,14 +4,22 @@ import { useAuth } from "../context/AuthContext";
 import { validateSecureURL } from "../utils/tokenUtils";
 import { saveProgress, getProgress } from "../utils/progress";
 
-/* کلیدهای Resume فقط برای پادکست (جدا از DB) */
+/** کلید رزوم محلی برای پادکست (جدا از ویدئو و جدا از DB) */
 const audioKey = (username, sessionId) =>
   `nilplayer.audio.resume::${username || "anon"}::${sessionId}`;
-const readAudioResume = (u, s) => {
-  try { return Math.max(0, Number(localStorage.getItem(audioKey(u, s)) || 0)); } catch { return 0; }
+
+const readAudioResume = (username, sessionId) => {
+  try {
+    const v = localStorage.getItem(audioKey(username, sessionId));
+    return Math.max(0, Number(v || 0));
+  } catch {
+    return 0;
+  }
 };
-const writeAudioResume = (u, s, secs) => {
-  try { localStorage.setItem(audioKey(u, s), String(Math.max(0, Math.floor(secs || 0)))); } catch {}
+const writeAudioResume = (username, sessionId, seconds) => {
+  try {
+    localStorage.setItem(audioKey(username, sessionId), String(Math.max(0, Math.floor(seconds || 0))));
+  } catch {}
 };
 
 export default function MediaModal({
@@ -20,23 +28,30 @@ export default function MediaModal({
   const { user } = useAuth();
   const username = user?.username;
 
+  // ===== UI state =====
   const [playbackRate, setPlaybackRate] = useState(1);
   const [wmVisible, setWmVisible] = useState(false);
   const [wmPos, setWmPos] = useState({ top: "20%", left: "30%" });
   const [warning, setWarning] = useState(false);
   const [expired, setExpired] = useState(false);
 
+  // ===== refs =====
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
 
+  // ===== progress state (فقط برای ویدئو مهم است) =====
   const [duration, setDuration] = useState(0);
   const [maxSeen, setMaxSeen] = useState(0);
   const lastSentRef = useRef(0);
-  const shouldSend = (now) => (now - lastSentRef.current > 5000 ? (lastSentRef.current = now, true) : false);
+  const shouldSend = (now) =>
+    now - lastSentRef.current > 5000 ? ((lastSentRef.current = now), true) : false;
 
-  /* نقطه شروع: ویدئو از DB/initialTime — پادکست از localStorage */
+  // ===== start position =====
+  // ویدئو: از DB (یا initialTime)
+  // پادکست: فقط از localStorage
   const [startAt, setStartAt] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -45,8 +60,12 @@ export default function MediaModal({
         const local = readAudioResume(username, sessionId);
         if (!cancelled) setStartAt(local || 0);
       } else {
+        // حتی اگر از صفحه map صفر بود، مستقیم از DB هم می‌گیریم تا بعد از login دقیق باشد
         const base = Number(initialTime || 0);
-        if (base > 0) { setStartAt(base); return; }
+        if (base > 0) {
+          setStartAt(base);
+          return;
+        }
         if (!username || !sessionId) return;
         const { data } = await getProgress(username, sessionId);
         if (!cancelled) setStartAt(Number(data?.last_position || 0));
@@ -55,13 +74,13 @@ export default function MediaModal({
     return () => { cancelled = true; };
   }, [open, type, initialTime, username, sessionId]);
 
-  /* اعتبار لینک */
+  // اعتبار لینک
   useEffect(() => {
     if (!open || !url) return;
     setExpired(!validateSecureURL(url));
   }, [url, open]);
 
-  /* واترمارک (با تاریخ و ساعت) */
+  // واترمارک با تاریخ و ساعت
   useEffect(() => {
     if (!open) return;
     const tick = () => {
@@ -76,7 +95,7 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  /* ضد ضبط صفحه (فقط ویدئو را pause کن) */
+  // ضد ضبط صفحه (فقط ویدئو را pause کند)
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
@@ -90,14 +109,14 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  /* ESC برای بستن */
+  // ESC برای بستن
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", h);
     return () => document.removeEventListener("keydown", h);
   }, [onClose]);
 
-  /* آگاه‌سازی صفحات برای رفرش پیشرفت بدون رفرش دستی */
+  // رویداد اطلاع‌رسانی به صفحات برای آپدیت فوری درصد
   const notifyProgress = () => {
     try {
       window.dispatchEvent(new CustomEvent("nilplayer:progress-updated", {
@@ -106,7 +125,7 @@ export default function MediaModal({
     } catch {}
   };
 
-  /* ===================== VIDEO (HLS + DB progress) ===================== */
+  // ================= VIDEO (HLS + DB progress) =================
   useEffect(() => {
     if (!open || type !== "video") return;
     const video = videoRef.current;
@@ -115,15 +134,16 @@ export default function MediaModal({
     const isHls = typeof url === "string" && url.includes(".m3u8");
 
     const jumpToStart = () => {
-      if (startAt && video.readyState >= 1) {
-        try { video.currentTime = startAt; } catch {}
+      const pos = Math.max(0, Number(startAt || 0));
+      if (pos > 0 && video.readyState >= 1) {
+        try { video.currentTime = pos; } catch {}
       } else {
-        const once = () => { try { video.currentTime = startAt || 0; } catch {} video.removeEventListener("loadedmetadata", once); };
+        const once = () => { try { video.currentTime = pos; } catch {} video.removeEventListener("loadedmetadata", once); };
         video.addEventListener("loadedmetadata", once);
       }
     };
 
-    const saveSnap = (complete = false) => {
+    const saveSnap = () => {
       const t = video.currentTime || 0;
       const d = video.duration || duration || 0;
       saveProgress({
@@ -131,21 +151,22 @@ export default function MediaModal({
         lastPosition: t,
         watchedSeconds: Math.max(maxSeen, t),
         totalSeconds: d,
-        completed: complete,
-      });
-      notifyProgress();
+        completed: false,
+      }).finally(notifyProgress);
     };
 
     const onLoadedMeta = () => {
       const d = video.duration || 0;
       setDuration(d);
       jumpToStart();
-      // اولین ذخیره برای ایجاد رکورد
+      // اولین اسنپ برای ساخت رکورد
       saveProgress({
         username, courseCode, sessionId,
-        lastPosition: startAt || 0, watchedSeconds: startAt || 0, totalSeconds: d, completed: false,
-      });
-      notifyProgress();
+        lastPosition: startAt || 0,
+        watchedSeconds: startAt || 0,
+        totalSeconds: d,
+        completed: false,
+      }).finally(notifyProgress);
       video.play().catch(() => {});
     };
 
@@ -156,15 +177,23 @@ export default function MediaModal({
       if (shouldSend(performance.now())) {
         saveProgress({
           username, courseCode, sessionId,
-          lastPosition: t, watchedSeconds: Math.max(maxSeen, t), totalSeconds: d, completed: false,
-        });
-        notifyProgress();
+          lastPosition: t,
+          watchedSeconds: Math.max(maxSeen, t),
+          totalSeconds: d,
+          completed: false,
+        }).finally(notifyProgress);
       }
     };
 
-    const onPause = () => saveSnap(false);
-    const onEnded = () => saveSnap(true);
-    const onBeforeUnload = () => saveSnap(false);
+    const onPause = () => saveSnap();
+    const onEnded = () => {
+      const d = video.duration || duration || 0;
+      saveProgress({
+        username, courseCode, sessionId,
+        lastPosition: d, watchedSeconds: d, totalSeconds: d, completed: true,
+      }).finally(notifyProgress);
+    };
+    const onBeforeUnload = () => saveSnap();
 
     video.addEventListener("loadedmetadata", onLoadedMeta);
     video.addEventListener("timeupdate", onTime);
@@ -172,10 +201,12 @@ export default function MediaModal({
     video.addEventListener("ended", onEnded);
     window.addEventListener("beforeunload", onBeforeUnload);
 
+    // پاکسازی سورس قبلی
     try { video.pause(); } catch {}
     try { video.removeAttribute("src"); } catch {}
     try { video.load(); } catch {}
 
+    // HLS
     if (isHls) {
       if (Hls.isSupported()) {
         const hls = new Hls({
@@ -190,24 +221,16 @@ export default function MediaModal({
         hlsRef.current = hls;
         hls.attachMedia(video);
         hls.loadSource(url);
-
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (video.readyState >= 1) onLoadedMeta();
         });
-
         hls.on(Hls.Events.ERROR, (_evt, data) => {
           if (!data?.fatal) return;
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR: try { hls.startLoad(); } catch {} break;
-            case Hls.ErrorTypes.MEDIA_ERROR: try { hls.recoverMediaError(); } catch {} break;
-            default:
-              try { hls.destroy(); } catch {}
-              hlsRef.current = null;
-              const nhls = new Hls({ enableWorker: true, lowLatencyMode: true });
-              hlsRef.current = nhls;
-              nhls.attachMedia(video);
-              nhls.loadSource(url);
-          }
+          try {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+            else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
+            else { hls.destroy(); const nhls = new Hls({ enableWorker: true, lowLatencyMode: true }); hlsRef.current = nhls; nhls.attachMedia(video); nhls.loadSource(url); }
+          } catch {}
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = url; // Safari
@@ -215,7 +238,7 @@ export default function MediaModal({
         console.warn("HLS not supported on this device.");
       }
     } else {
-      video.src = url; // MP4 معمولی
+      video.src = url; // MP4
     }
 
     return () => {
@@ -232,7 +255,7 @@ export default function MediaModal({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, type, url, sessionId, courseCode, startAt, username]);
 
-  /* ===================== AUDIO (HLS + LOCAL resume ONLY) ===================== */
+  // ================= AUDIO (HLS + LOCAL resume ONLY) =================
   useEffect(() => {
     if (!open || type !== "audio") return;
     const el = audioRef.current;
@@ -261,7 +284,7 @@ export default function MediaModal({
     const onLoaded = () => safeSeek();
     const onCanPlay = () => safeSeek();
 
-    // فقط محل پخش را محلی ذخیره کن (بدون هیچ اثری روی درصد)
+    // فقط LocalStorage
     const onTime = () => writeAudioResume(username, sessionId, el.currentTime || 0);
     const onPause = () => writeAudioResume(username, sessionId, el.currentTime || 0);
     const onEnded = () => writeAudioResume(username, sessionId, 0);
@@ -278,7 +301,6 @@ export default function MediaModal({
         hlsRef.current = hls;
         hls.attachMedia(el);
         hls.loadSource(url);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => { safeSeek(); });
       } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
         el.src = url; // Safari
       } else {
@@ -290,10 +312,10 @@ export default function MediaModal({
     }
 
     return cleanup;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, type, url, sessionId, startAt, username]);
 
-  /* سرعت پخش */
+  // ===== playback rate =====
   const applyRate = (r) => {
     setPlaybackRate(r);
     if (videoRef.current) videoRef.current.playbackRate = r;
@@ -321,7 +343,11 @@ export default function MediaModal({
         <span style={S.pillsLabel}>سرعت پخش:</span>
         <div style={S.pillsWrap}>
           {presets.map((r) => (
-            <button key={r} onClick={() => onChange(r)} style={{ ...S.pill, ...(value === r ? S.pillActive : null) }}>
+            <button
+              key={r}
+              onClick={() => onChange(r)}
+              style={{ ...S.pill, ...(value === r ? S.pillActive : null) }}
+            >
               {r}x
             </button>
           ))}
@@ -335,9 +361,13 @@ export default function MediaModal({
   const timeStr = now.toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
   return (
-    <div className="media-modal-overlay" onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()} style={S.overlay}>
+    <div
+      className="media-modal-overlay"
+      onClick={(e) => e.target.classList.contains("media-modal-overlay") && onClose()}
+      style={S.overlay}
+    >
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
+        {/* header */}
         <div style={S.header}>
           <div style={S.headLeft}>
             <div style={S.mediaBadge}>{type === "video" ? "🎬 ویدئو" : "🎧 پادکست"}</div>
@@ -346,17 +376,21 @@ export default function MediaModal({
           <button onClick={onClose} aria-label="بستن" style={S.closeBtn}>×</button>
         </div>
 
-        {/* Body */}
+        {/* body */}
         {type === "video" ? (
           <div style={{ position: "relative" }}>
             <video
               ref={videoRef}
-              controls playsInline autoPlay
+              controls
+              playsInline
+              autoPlay
               controlsList="nodownload noremoteplayback"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
               style={S.video}
             />
+
+            {/* watermark */}
             {username && (
               <div style={{
                 position: "absolute",
@@ -364,18 +398,32 @@ export default function MediaModal({
                 opacity: wmVisible ? 0.4 : 0,
                 transform: wmVisible ? "scale(1)" : "scale(0.96)",
                 transition: "opacity .6s ease, transform .6s ease, top .6s, left .6s",
-                color: "#fff", fontWeight: 700,
+                color: "#fff",
+                fontWeight: 700,
                 fontSize: "clamp(12px, 1.8vw, 16px)",
-                pointerEvents: "none", userSelect: "none",
+                pointerEvents: "none",
+                userSelect: "none",
                 textShadow: "0 0 10px rgba(0,0,0,.7)",
               }}>
                 {`${username} • ${dateStr} ${timeStr}`}
               </div>
             )}
-            {warning && <div style={S.warn}>⚠️ ضبط صفحه شناسایی شد!<br />لطفاً ضبط را متوقف کنید.</div>}
+
+            {/* warn */}
+            {warning && (
+              <div style={S.warn}>⚠️ ضبط صفحه شناسایی شد!<br />لطفاً ضبط را متوقف کنید.</div>
+            )}
+
+            {/* speed */}
             <div style={S.fabRate}>
-              <select value={playbackRate} onChange={(e) => applyRate(Number(e.target.value))} style={S.fabSelect}>
-                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => <option key={s} value={s}>{s}x</option>)}
+              <select
+                value={playbackRate}
+                onChange={(e) => applyRate(Number(e.target.value))}
+                style={S.fabSelect}
+              >
+                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
+                  <option key={s} value={s}>{s}x</option>
+                ))}
               </select>
             </div>
           </div>
@@ -383,7 +431,8 @@ export default function MediaModal({
           <div style={S.audioBox}>
             <audio
               ref={audioRef}
-              controls autoPlay
+              controls
+              autoPlay
               controlsList="nodownload noremoteplayback"
               onContextMenu={(e) => e.preventDefault()}
               style={S.audio}
@@ -392,6 +441,7 @@ export default function MediaModal({
           </div>
         )}
       </div>
+
       <style>{`@keyframes fadeIn {from{opacity:0} to{opacity:1}}`}</style>
     </div>
   );
@@ -447,16 +497,30 @@ const S = {
     background: "rgba(0,0,0,.45)", border: "1px solid rgba(255,255,255,.22)",
     borderRadius: 12, padding: "2px 6px", boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
-  fabSelect: { background: "transparent", color: "#0B1A3A", border: "none", fontSize: 13, outline: "none", cursor: "pointer" },
-  audioBox: { background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 14, padding: 12 },
+  fabSelect: {
+    background: "transparent", color: "#0B1A3A",
+    border: "none", fontSize: 13, outline: "none", cursor: "pointer",
+  },
+  audioBox: {
+    background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)",
+    borderRadius: 14, padding: 12,
+  },
   audio: { width: "100%", accentColor: "#1A83CC", filter: "saturate(1.05)" },
   pillsRow: { display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" },
   pillsLabel: { fontSize: 13, opacity: .9, whiteSpace: "nowrap" },
   pillsWrap: { display: "flex", gap: 6, flexWrap: "wrap" },
   pill: {
     padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,.08)",
-    border: "1px solid rgba(255,255,255,.18)", color: "#fff", fontSize: 12.5, fontWeight: 800, cursor: "pointer",
+    border: "1px solid rgba(255,255,255,.18)", color: "#fff",
+    fontSize: 12.5, fontWeight: 800, cursor: "pointer",
   },
-  pillActive: { background: "linear-gradient(90deg,#1A83CC,#2CA7E3)", borderColor: "rgba(255,255,255,.35)", boxShadow: "0 6px 16px rgba(26,131,204,.35)" },
-  primaryBtn: { marginTop: 16, padding: "8px 14px", background: "#1A83CC", color: "#fff", borderRadius: 10, border: "none", cursor: "pointer" },
+  pillActive: {
+    background: "linear-gradient(90deg,#1A83CC,#2CA7E3)",
+    borderColor: "rgba(255,255,255,.35)", boxShadow: "0 6px 16px rgba(26,131,204,.35)",
+  },
+  primaryBtn: {
+    marginTop: 16, padding: "8px 14px",
+    background: "#1A83CC", color: "#fff",
+    borderRadius: 10, border: "none", cursor: "pointer",
+  },
 };
