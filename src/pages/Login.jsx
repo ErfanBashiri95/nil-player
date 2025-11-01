@@ -38,7 +38,7 @@ export default function Login() {
           continue;
         }
       }
-      if (!loaded) setBgUrl(FALLBACKS[0]); // fallback در صورت شکست همه
+      if (!loaded) setBgUrl(FALLBACKS[0]);
     })();
   }, []);
 
@@ -172,7 +172,6 @@ export default function Login() {
       targets = [...textPts, ...iconPts];
     }
 
-    // ⭐ ستاره‌های سفید
     const STAR_COLOR = "#FFFFFF";
     const BG_COUNT = innerWidth < 600 ? 140 : 320;
     const TEXT_COUNT = innerWidth < 600 ? 1100 : 2000;
@@ -273,14 +272,21 @@ export default function Login() {
     };
   }, [bgUrl]);
 
+  // ✅ اصلاح شده:
   async function handleLogin() {
     const id = username.trim().toLowerCase();
     if (!id) return;
-    const found = allowed.find((u) => u.username.trim().toLowerCase() === id);
+    const found = allowed.find(u => u.username.trim().toLowerCase() === id);
     if (!found) return alert("یوزرنیم مجاز نیست.");
-    const userObj = { username: found.username, course_code: found.course_code.toUpperCase() };
-    localStorage.setItem("nil_auth", JSON.stringify(userObj));
-    navigate(userObj.course_code === "HELIX02" ? "/helix02" : "/helix01");
+
+    try {
+      const user = await login(found.username);
+      const code = (user?.course_code || found.course_code || "").toUpperCase();
+      navigate(code === "HELIX02" ? "/helix02" : "/helix01", { replace: true });
+    } catch (err) {
+      console.error(err);
+      alert("خطا در ورود");
+    }
   }
 
   const isSmall = window.innerWidth < 640;
