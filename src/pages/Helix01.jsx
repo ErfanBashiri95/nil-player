@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
 import "../styles/helix01.css";
@@ -29,14 +29,52 @@ export default function Helix01() {
     const initialTime = p?.last_position ? Number(p.last_position) : 0;
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
-  const closeModal = () => setModal(null);
+
+  // --- رفرش پیشرفت: قابل استفاده هر زمان ---
+  const reloadProgress = useCallback(async () => {
+    if (!user || sessions.length === 0) return;
+    const ids = sessions.map((s) => s.id);
+    const { data, error } = await supabase
+      .from("nilplayer_progress")
+      .select("session_id, watched_seconds, total_seconds, completed, last_position, media_type")
+      .eq("username", user.username)
+      .in("session_id", ids);
+
+    if (error) {
+      console.error("fetch progress error:", error);
+      return;
+    }
+
+    const map = {};
+    for (const r of data || []) {
+      // فقط ویدئو در درصد لحاظ شود (media_type === 'video')
+      const total = Number(r.total_seconds || 0);
+      const base = Number(r.watched_seconds || r.last_position || 0);
+      const percent =
+        r.media_type === "video" && total > 0
+          ? Math.min(100, Math.round((base / total) * 100))
+          : 0;
+      map[r.session_id] = {
+        percent,
+        last_position: Number(r.last_position || 0),
+        completed: !!r.completed && r.media_type === "video",
+      };
+    }
+    setProgressMap(map);
+  }, [user, sessions]);
+
+  const closeModal = () => {
+    setModal(null);
+    // بعد از بستن مدیا، یک بار وضعیت را تازه کن
+    reloadProgress();
+  };
 
   // ESC برای بستن
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [closeModal]);
 
   // خواندن جلسات + پیش‌لود بک‌گراند + آماده‌سازی صفحه
   useEffect(() => {
@@ -64,60 +102,30 @@ export default function Helix01() {
         console.error("fetch sessions error:", error);
       }
 
-      // یک مکث خیلی کوتاه برای جاافتادن فونت/استایل
       setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // --- ADD: یک تابع واحد برای خواندن پرگرس ---
-  async function fetchProgress(currentUser = user, currentSessions = sessions) {
-    if (!currentUser || !currentSessions?.length) return;
-    const ids = currentSessions.map((s) => s.id);
-    const { data, error } = await supabase
-      .from("nilplayer_progress")
-      .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", currentUser.username)
-      .in("session_id", ids);
-
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
-
-    const map = {};
-    for (const r of data || []) {
-      const total = Number(r.total_seconds || 0);
-      const base = Number(r.watched_seconds || r.last_position || 0);
-      const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
-      map[r.session_id] = {
-        percent,
-        last_position: Number(r.last_position || 0),
-        completed: !!r.completed,
-      };
-    }
-    setProgressMap(map);
-  }
-
-  // خواندن پیشرفت کاربر برای همین دوره و ساخت map (فراخوانی اولیه)
+  // وقتی user یا sessions عوض شد، پیشرفت را بگیر
   useEffect(() => {
-    fetchProgress(user, sessions);
-  }, [user, sessions]);
+    reloadProgress();
+  }, [reloadProgress]);
 
-  // --- ADD: رفرش فوری بدون رفرش صفحه (گوش‌دادن به رویداد)
+  // پولینگ هر ۱۰ ثانیه برای همگام‌بودن خودکار
   useEffect(() => {
-    const onUpd = () => fetchProgress(user, sessions);
-    window.addEventListener("nilplayer:progress-updated", onUpd);
-    return () => window.removeEventListener("nilplayer:progress-updated", onUpd);
-  }, [user, sessions]);
+    const id = setInterval(() => reloadProgress(), 10000);
+    return () => clearInterval(id);
+  }, [reloadProgress]);
 
   return (
     <div className="helix-page">
-      {/* هدر ثابت: خروج + EN/FA */}
       <HeaderBar />
 
       <div className="helix-bg" />
-      {/* اگر قبلاً محدود کرده‌ای به نیمهٔ بالا، همین StarOverlay را داخل یک ظرف 50vh بگذار */}
-      <StarOverlay />
+      {/* ستاره‌ها فقط نیمهٔ بالا */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
+        <StarOverlay />
+      </div>
       <div className="helix-aurora" />
       <div className="helix-shade" />
 
@@ -135,7 +143,7 @@ export default function Helix01() {
               const done = !!p?.completed || percent === 100;
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
-                  {/* Badge پیشرفت */}
+                  {/* Badge پیشرفت (فقط ویدئو) */}
                   <div
                     style={{
                       position: "absolute",
@@ -149,13 +157,11 @@ export default function Helix01() {
                       fontSize: 12,
                       fontWeight: 800,
                       color: "#fff",
-                      background: done
-                        ? "linear-gradient(90deg,#16a34a,#22c55e)"
-                        : "rgba(255,255,255,.18)",
+                      background: done ? "linear-gradient(90deg,#16a34a,#22c55e)" : "rgba(255,255,255,.18)",
                       border: "1px solid rgba(255,255,255,.28)",
                       backdropFilter: "blur(4px)",
                     }}
-                    title={done ? "کامل دیده شده" : "درصد تماشا"}
+                    title={done ? "کامل دیده شده" : "درصد تماشا (فقط ویدئو)"}
                   >
                     {done ? "✓ کامل" : `${percent}%`}
                   </div>
@@ -163,14 +169,14 @@ export default function Helix01() {
                   <h3 className="session-title">{s.title}</h3>
                   <p className="session-desc">{s.desc}</p>
 
-                  {/* فقط ویدئو - دکمه پادکست حذف شده */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
-                    >
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <button className="btn btn-primary" onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}>
                       <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
                       {STR("video")}
+                    </button>
+                    <button className="btn btn-ghost" onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}>
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎧</span>
+                      {STR("podcast")}
                     </button>
                   </div>
                 </article>
@@ -180,7 +186,6 @@ export default function Helix01() {
         </section>
       </main>
 
-      {/* لودر تمام‌صفحه */}
       <PageLoader show={!ready} />
 
       {modal && (
