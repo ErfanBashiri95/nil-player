@@ -20,20 +20,6 @@ export default function Helix02() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  const openMedia = async (type, url, title, sessionId) => {
-    let initialTime = 0;
-    if (type === "video") {
-      const p = progressMap[sessionId];
-      if (p?.last_position > 0) {
-        initialTime = Number(p.last_position);
-      } else if (user?.username) {
-        const { data } = await getProgress(user.username, sessionId);
-        initialTime = Number(data?.last_position || 0);
-      }
-    }
-    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
-  };
-
   const reloadProgress = useCallback(async () => {
     if (!user || sessions.length === 0) return;
     const ids = sessions.map((s) => s.id);
@@ -59,52 +45,31 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user, sessions]);
 
-  // ⬅️ ریفرش خودکار یک‌بار (هم‌ارز ریفرش دستی)
-  useEffect(() => {
-    if (!user) return;
-    const key = `${window.location.pathname}::nilplayer_autoreload_once`;
-    const did = sessionStorage.getItem(key);
-    if (!did) {
-      sessionStorage.setItem(key, "1");
-      setTimeout(() => window.location.reload(), 50);
-    }
-  }, [user]);
-
-  // بعد از ready=true، چند بار رفرش پرگرس برای همگام‌سازی فوری
-  useEffect(() => {
-    if (ready) {
-      reloadProgress();
-      const t1 = setTimeout(reloadProgress, 250);
-      const t2 = setTimeout(reloadProgress, 1200);
-      return () => { clearTimeout(t1); clearTimeout(t2); };
-    }
-  }, [ready, reloadProgress]);
-
-  // auto refresh hooks
-  useEffect(() => {
-    const unsub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") reloadProgress();
-    });
-    const onFocus = () => reloadProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
-    const onProgressEvent = () => reloadProgress();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      unsub?.data?.subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
+  const smartRefresh = useCallback(() => {
+    reloadProgress();
+    const t1 = setTimeout(reloadProgress, 300);
+    const t2 = setTimeout(reloadProgress, 1500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [reloadProgress]);
 
-  const closeModal = () => {
+  const openMedia = useCallback(async (type, url, title, sessionId) => {
+    let initialTime = 0;
+    if (type === "video") {
+      const p = progressMap[sessionId];
+      if (p?.last_position > 0) {
+        initialTime = Number(p.last_position);
+      } else if (user?.username) {
+        const { data } = await getProgress(user.username, sessionId);
+        initialTime = Number(data?.last_position || 0);
+      }
+    }
+    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
+  }, [progressMap, user?.username]);
+
+  const closeModal = useCallback(() => {
     setModal(null);
-    reloadProgress();
-  };
+    smartRefresh();
+  }, [smartRefresh]);
 
   // ESC
   useEffect(() => {
@@ -141,7 +106,46 @@ export default function Helix02() {
     })();
   }, []);
 
-  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+  // وقتی user یا sessions آماده شد، بلافاصله رفرش مطمئن
+  useEffect(() => {
+    if (user && sessions.length > 0) {
+      const cleanup = smartRefresh();
+      return cleanup;
+    }
+  }, [user, sessions.length, smartRefresh]);
+
+  // بعد از ready=true هم یک همگام‌سازی فوری
+  useEffect(() => {
+    if (ready) {
+      const cleanup = smartRefresh();
+      return cleanup;
+    }
+  }, [ready, smartRefresh]);
+
+  // رویدادهای محیطی
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        smartRefresh();
+      }
+    });
+    const onFocus = () => smartRefresh();
+    const onVisible = () => { if (document.visibilityState === "visible") smartRefresh(); };
+    const onProgressEvent = () => smartRefresh();
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
+
+    return () => {
+      sub?.subscription?.unsubscribe?.();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+    };
+  }, [smartRefresh]);
+
+  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
@@ -222,7 +226,7 @@ export default function Helix02() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={() => { setModal(null); reloadProgress(); }}
+          onClose={closeModal}
           type={modal.type}
           url={modal.url}
           title={modal.title}
