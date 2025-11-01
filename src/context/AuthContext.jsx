@@ -9,20 +9,22 @@ const STORAGE_KEY = "nil_auth";
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
 
-  // 🔹 بازیابی از localStorage هنگام بارگذاری صفحه
+  // 🔹 بازیابی از localStorage هنگام لود اولیه
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         setUser(parsed);
+        // ✅ اعلان برای صفحات که کاربر آماده است
+        window.dispatchEvent(new CustomEvent("nil-auth:login", { detail: parsed }));
       }
     } catch (err) {
       console.error("Auth restore error:", err);
     }
   }, []);
 
-  // 🔹 ذخیره یا پاک کردن از localStorage
+  // 🔹 ذخیره یا حذف از localStorage هنگام تغییر user
   useEffect(() => {
     try {
       if (user) {
@@ -35,13 +37,12 @@ export default function AuthProvider({ children }) {
     }
   }, [user]);
 
-  // 🔹 تابع ورود (با چک whitelist)
+  // 🔹 تابع ورود
   const login = async (username) => {
     const u = String(username || "").trim().toLowerCase();
     const found = allowed.find(
       (item) => item.username.trim().toLowerCase() === u
     );
-
     if (!found) throw new Error("not-allowed");
 
     const userObj = {
@@ -52,11 +53,8 @@ export default function AuthProvider({ children }) {
 
     setUser(userObj);
 
-    // 📢 اطلاع‌رسانی به سایر تب‌ها و صفحات
     try {
-      window.dispatchEvent(
-        new CustomEvent("nil-auth:login", { detail: userObj })
-      );
+      window.dispatchEvent(new CustomEvent("nil-auth:login", { detail: userObj }));
     } catch (err) {
       console.warn("Event dispatch login failed:", err);
     }
@@ -67,15 +65,12 @@ export default function AuthProvider({ children }) {
   // 🔹 تابع خروج
   const logout = () => {
     setUser(null);
-
-    // 📢 اطلاع‌رسانی به سایر تب‌ها و صفحات
     try {
       window.dispatchEvent(new Event("nil-auth:logout"));
     } catch (err) {
       console.warn("Event dispatch logout failed:", err);
     }
 
-    // همچنین localStorage را پاک می‌کنیم
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {}
