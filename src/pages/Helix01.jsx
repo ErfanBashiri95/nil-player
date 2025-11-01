@@ -20,8 +20,21 @@ export default function Helix01() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // برای Remount امن بعد از SIGNED_IN و بستن مدیا
+  // برای Remount مطمئن بعد از تغییر یوزر
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // ⬇️ پچ A: رفرش خودکار یک‌باره پس از لاگین
+  useEffect(() => {
+    if (!user?.username) return;
+    const flag = `nilplayer.autorefresh.once::${user.username}`;
+    const already = sessionStorage.getItem(flag);
+    if (!already) {
+      sessionStorage.setItem(flag, "1");
+      setTimeout(() => {
+        window.location.replace(window.location.href);
+      }, 120);
+    }
+  }, [user?.username]);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -62,29 +75,12 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user, sessions]);
 
-  // اطمینان از آماده بودن نشست پس از لاگین
-  const refreshAfterSignIn = useCallback(async () => {
-    try {
-      // کمی تاخیر تا RLS/توکن ست شود
-      await new Promise(r => setTimeout(r, 350));
-      await supabase.auth.getSession(); // تضمین در دسترس بودن سشن
-      setRefreshKey(k => k + 1); // Remount امن
-      await reloadProgress();
-    } catch (e) {
-      console.warn("post-login refresh failed:", e);
-      setRefreshKey(k => k + 1);
-      await reloadProgress();
-    }
-  }, [reloadProgress]);
-
-  // auto refresh hooks
+  // auto refresh hooks + افزایش refreshKey روی تغییر Auth
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_OUT") {
-        setProgressMap({});
-      }
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        await refreshAfterSignIn();
+    const sub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_IN" || evt.event === "SIGNED_OUT") {
+        setRefreshKey((k) => k + 1); // برای Remount
+        reloadProgress(); // برای آپدیت سریع
       }
     });
 
@@ -97,27 +93,24 @@ export default function Helix01() {
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
-      sub?.subscription?.unsubscribe?.();
+      sub?.data?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [reloadProgress, refreshAfterSignIn]);
+  }, [reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
-    setRefreshKey(k => k + 1); // بلافاصله Remount کارت‌ها
     reloadProgress();
   };
 
-  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closeModal]);
 
-  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -138,17 +131,15 @@ export default function Helix01() {
     })();
   }, []);
 
-  // وقتی user یا sessions آماده شد
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
-
-  // پولینگ آرام
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page" key={refreshKey}>
+    // ⬇️ پچ B: Remount بر اساس username و refreshKey
+    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
       <HeaderBar />
       <div className="helix-bg" />
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>

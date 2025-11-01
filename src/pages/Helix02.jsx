@@ -20,8 +20,21 @@ export default function Helix02() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // برای Remount امن بعد از SIGNED_IN و بستن مدیا
+  // برای Remount مطمئن بعد از تغییر یوزر
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // ⬇️ پچ A: رفرش خودکار یک‌باره پس از لاگین
+  useEffect(() => {
+    if (!user?.username) return;
+    const flag = `nilplayer.autorefresh.once::${user.username}`;
+    const already = sessionStorage.getItem(flag);
+    if (!already) {
+      sessionStorage.setItem(flag, "1");
+      setTimeout(() => {
+        window.location.replace(window.location.href);
+      }, 120);
+    }
+  }, [user?.username]);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -62,27 +75,12 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user, sessions]);
 
-  const refreshAfterSignIn = useCallback(async () => {
-    try {
-      await new Promise(r => setTimeout(r, 350));
-      await supabase.auth.getSession();
-      setRefreshKey(k => k + 1);
-      await reloadProgress();
-    } catch (e) {
-      console.warn("post-login refresh failed:", e);
-      setRefreshKey(k => k + 1);
-      await reloadProgress();
-    }
-  }, [reloadProgress]);
-
-  // auto refresh hooks
+  // auto refresh hooks + افزایش refreshKey روی تغییر Auth
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_OUT") {
-        setProgressMap({});
-      }
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        await refreshAfterSignIn();
+    const sub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_IN" || evt.event === "SIGNED_OUT") {
+        setRefreshKey((k) => k + 1); // برای Remount
+        reloadProgress(); // برای آپدیت سریع
       }
     });
 
@@ -95,16 +93,15 @@ export default function Helix02() {
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
-      sub?.subscription?.unsubscribe?.();
+      sub?.data?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [reloadProgress, refreshAfterSignIn]);
+  }, [reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
-    setRefreshKey(k => k + 1);
     reloadProgress();
   };
 
@@ -144,14 +141,14 @@ export default function Helix02() {
   }, []);
 
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
-
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page" key={refreshKey}>
+    // ⬇️ پچ B: Remount بر اساس username و refreshKey
+    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
       <HeaderBar />
       <div className="helix-bg" />
 
@@ -225,7 +222,7 @@ export default function Helix02() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={closeModal}
+          onClose={() => { setModal(null); reloadProgress(); }}
           type={modal.type}
           url={modal.url}
           title={modal.title}
