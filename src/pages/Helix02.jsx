@@ -19,6 +19,9 @@ export default function Helix02() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
+  // ✅ فقط برای پاسخ‌گویی واکنشی روی موبایل
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
     if (type === "video") {
@@ -137,7 +140,8 @@ export default function Helix02() {
       <div className="helix-shade" />
 
       <main className="helix-content" style={{ visibility: ready ? "visible" : "hidden" }}>
-        <section className="helix-hero">
+        {/* ⬇️ مورد 2: تیتر/زیرتیتر در موبایل کمی پایین‌تر */}
+        <section className="helix-hero" style={{ marginTop: isMobile ? "14vh" : undefined }}>
           <h1 className="helix-title">{STR("helix02_title")}</h1>
           <p className="helix-subtitle">{STR("subtitle")}</p>
         </section>
@@ -162,9 +166,6 @@ export default function Helix02() {
                       padding: "4px 8px",
                       borderRadius: 999,
                       fontSize: 12,
-                      fontSize: window.innerWidth < 640 ? "8px" : "15px",
-                      padding: window.innerWidth < 640 ? "4px 8px" : "8px 18px",
-
                       fontWeight: 800,
                       color: "#fff",
                       background: done ? "linear-gradient(90deg,#16a34a,#22c55e)" : "rgba(255,255,255,.18)",
@@ -180,11 +181,27 @@ export default function Helix02() {
                   <p className="session-desc">{s.desc}</p>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <button className="btn btn-primary" onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}>
+                    {/* ⬇️ مورد 1: دکمه‌های ویدئو/پادکست روی موبایل کوچکتر */}
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
+                      style={{
+                        fontSize: isMobile ? "12px" : undefined,
+                        padding: isMobile ? "6px 12px" : undefined,
+                      }}
+                    >
                       <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
                       {STR("video")}
                     </button>
-                    <button className="btn btn-ghost" onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}>
+
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
+                      style={{
+                        fontSize: isMobile ? "12px" : undefined,
+                        padding: isMobile ? "6px 12px" : undefined,
+                      }}
+                    >
                       <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎧</span>
                       {STR("podcast")}
                     </button>
