@@ -12,20 +12,6 @@ import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
 import { getProgress } from "../utils/progress";
 
-async function getUsernameFromSession() {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const u = session?.user;
-    return (
-      u?.user_metadata?.username ||
-      u?.email ||
-      null
-    );
-  } catch {
-    return null;
-  }
-}
-
 export default function Helix02() {
   const { user } = useAuth();
 
@@ -40,65 +26,83 @@ export default function Helix02() {
       const p = progressMap[sessionId];
       if (p?.last_position > 0) {
         initialTime = Number(p.last_position);
-      } else {
-        const name = user?.username || (await getUsernameFromSession());
-        if (name) {
-          const { data } = await getProgress(name, sessionId);
-          initialTime = Number(data?.last_position || 0);
-        }
+      } else if (user?.username) {
+        const { data } = await getProgress(user.username, sessionId);
+        initialTime = Number(data?.last_position || 0);
       }
     }
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
   };
 
-  const reloadProgress = useCallback(async () => {
-    const name = user?.username || (await getUsernameFromSession());
-    if (!name) return;
-    const { data, error } = await supabase
-      .from("nilplayer_progress")
-      .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", name)
-      .eq("course_code", "HELIX02");
+  // --- فقط با username + course_code می‌گیریم (بدون وابستگی به sessions) ---
+  const reloadProgress = useCallback(
+    async (usernameOverride) => {
+      const uname = usernameOverride ?? user?.username;
+      if (!uname) return;
 
-    if (error) { console.error("fetch progress error:", error); return; }
+      const { data, error } = await supabase
+        .from("nilplayer_progress")
+        .select("session_id, watched_seconds, total_seconds, completed, last_position")
+        .eq("username", uname)
+        .eq("course_code", "HELIX02");
 
-    const map = {};
-    for (const r of data || []) {
-      const total = Number(r.total_seconds || 0);
-      const base = Number(r.watched_seconds || r.last_position || 0);
-      const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
-      map[r.session_id] = {
-        percent,
-        last_position: Number(r.last_position || 0),
-        completed: !!r.completed,
-      };
-    }
-    setProgressMap(map);
-  }, [user?.username]);
+      if (error) { console.error("fetch progress error:", error); return; }
 
+      const map = {};
+      for (const r of data || []) {
+        const total = Number(r.total_seconds || 0);
+        const base = Number(r.watched_seconds || r.last_position || 0);
+        const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
+        map[r.session_id] = {
+          percent,
+          last_position: Number(r.last_position || 0),
+          completed: !!r.completed,
+        };
+      }
+      setProgressMap(map);
+    },
+    [user?.username, supabase]
+  );
+
+  // --- همگام‌سازی Auth + فوکِس/ویزیبیلیتی + bfcache + سیگنال مدیا ---
   useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") {
-        reloadProgress();
-        setTimeout(reloadProgress, 400);
+    const sub = supabase.auth.onAuthStateChange((evt, session) => {
+      const meta = session?.user?.user_metadata || {};
+      const unameFromSession =
+        meta.username ||
+        meta.user_name ||
+        session?.user?.email ||
+        user?.username;
+
+      if (evt === "SIGNED_IN" || evt === "TOKEN_REFRESHED" || evt === "INITIAL_SESSION") {
+        reloadProgress(unameFromSession);
+        setTimeout(() => reloadProgress(unameFromSession), 250);
+        setTimeout(() => reloadProgress(unameFromSession), 1200);
+      }
+
+      if (evt === "SIGNED_OUT") {
+        setProgressMap({});
       }
     });
 
     const onFocus = () => reloadProgress();
     const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onPageShow = (e) => { if (e.persisted) reloadProgress(); }; // bfcache
     const onProgressEvent = () => reloadProgress();
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
       sub?.data?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [reloadProgress]);
+  }, [reloadProgress, supabase, user?.username]);
 
   const closeModal = () => {
     setModal(null);
@@ -140,8 +144,10 @@ export default function Helix02() {
     })();
   }, []);
 
+  // با تغییر یوزر فوراً بگیر
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
 
+  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
