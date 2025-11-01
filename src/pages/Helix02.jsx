@@ -5,13 +5,10 @@ import MediaModal from "../components/MediaModal";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
-/* UI */
 import HeaderBar from "../components/HeaderBar";
 import PageLoader from "../components/PageLoader";
 import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
-
-/* API */
 import { getProgress } from "../utils/progress";
 
 export default function Helix02() {
@@ -48,7 +45,6 @@ export default function Helix02() {
       console.error("fetch progress error:", error);
       return;
     }
-
     const map = {};
     for (const r of data || []) {
       const total = Number(r.total_seconds || 0);
@@ -63,19 +59,43 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user?.username]);
 
+  useEffect(() => {
+    if (!user?.username) {
+      setProgressMap({});
+      return;
+    }
+    reloadProgress();
+    const t1 = setTimeout(reloadProgress, 300);
+    const t2 = setTimeout(reloadProgress, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [user?.username, reloadProgress]);
+
+  useEffect(() => {
+    const onUserChanged = () => {
+      reloadProgress();
+      const t1 = setTimeout(reloadProgress, 300);
+      const t2 = setTimeout(reloadProgress, 1000);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    };
+    window.addEventListener("nil:user-changed", onUserChanged);
+    window.addEventListener("nil:user-logged-out", () => setProgressMap({}));
+    return () => {
+      window.removeEventListener("nil:user-changed", onUserChanged);
+      window.removeEventListener("nil:user-logged-out", () => {});
+    };
+  }, [reloadProgress]);
+
   const closeModal = () => {
     setModal(null);
     reloadProgress();
   };
 
-  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [closeModal]);
 
-  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       await Promise.allSettled([preloadImage("/assets/helix02_bg.png")]);
@@ -103,51 +123,16 @@ export default function Helix02() {
     })();
   }, []);
 
-  // hard triggers + safe delay
-  useEffect(() => {
-    reloadProgress();
-
-    let t = null;
-    if (user?.username) {
-      t = setTimeout(() => reloadProgress(), 400);
-    }
-
-    const onFocus = () => reloadProgress();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") reloadProgress();
-    };
-    const onProgressEvent = () => reloadProgress();
-    const onUserChanged = () => reloadProgress();
-    const onUserLoggedOut = () => setProgressMap({});
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-    window.addEventListener("nil:user-changed", onUserChanged);
-    window.addEventListener("nil:user-logged-out", onUserLoggedOut);
-
-    return () => {
-      if (t) clearTimeout(t);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-      window.removeEventListener("nil:user-changed", onUserChanged);
-      window.removeEventListener("nil:user-logged-out", onUserLoggedOut);
-    };
-  }, [user?.username, reloadProgress]);
-
-  // polling 10s
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page">
+    <div key={user?.username || "anon"} className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
 
-      {/* ستاره‌ها فقط نیمهٔ بالایی */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
         <StarOverlay />
       </div>
@@ -217,7 +202,7 @@ export default function Helix02() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={() => { setModal(null); reloadProgress(); }}
+          onClose={closeModal}
           type={modal.type}
           url={modal.url}
           title={modal.title}

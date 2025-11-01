@@ -5,13 +5,10 @@ import "../styles/helix01.css";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
-/* UI */
 import HeaderBar from "../components/HeaderBar";
 import PageLoader from "../components/PageLoader";
 import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
-
-/* API */
 import { getProgress } from "../utils/progress";
 
 export default function Helix01() {
@@ -22,7 +19,6 @@ export default function Helix01() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // ---- open modal with resume time (video from DB, audio handled inside MediaModal via localStorage)
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
     if (type === "video") {
@@ -37,7 +33,7 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // ---- fetch progress only by username + course_code (independent from sessions)
+  // فقط با username + course_code می‌گیریم (نیازی به لیست sessions برای فیلتر نیست)
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
@@ -50,7 +46,6 @@ export default function Helix01() {
       console.error("fetch progress error:", error);
       return;
     }
-
     const map = {};
     for (const r of data || []) {
       const total = Number(r.total_seconds || 0);
@@ -65,19 +60,48 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user?.username]);
 
+  // به تغییر یوزر خیلی حساس باش: پاک‌سازی در لاگ‌اوت و چندین بار fetch بعد از لاگ‌این
+  useEffect(() => {
+    if (!user?.username) {
+      setProgressMap({});
+      return;
+    }
+    // fetch چندمرحله‌ای برای اطمینان
+    reloadProgress();
+    const t1 = setTimeout(reloadProgress, 300);
+    const t2 = setTimeout(reloadProgress, 1000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [user?.username, reloadProgress]);
+
+  // گوش به ایونت سفارشی (در صورت استفاده از AuthContext ایونت‌دار)
+  useEffect(() => {
+    const onUserChanged = () => {
+      reloadProgress();
+      const t1 = setTimeout(reloadProgress, 300);
+      const t2 = setTimeout(reloadProgress, 1000);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    };
+    window.addEventListener("nil:user-changed", onUserChanged);
+    window.addEventListener("nil:user-logged-out", () => setProgressMap({}));
+    return () => {
+      window.removeEventListener("nil:user-changed", onUserChanged);
+      window.removeEventListener("nil:user-logged-out", () => {});
+    };
+  }, [reloadProgress]);
+
   const closeModal = () => {
     setModal(null);
-    reloadProgress(); // refresh right after closing player
+    reloadProgress();
   };
 
-  // ---- keyboard ESC
+  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [closeModal]);
 
-  // ---- load sessions + bg
+  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -105,52 +129,17 @@ export default function Helix01() {
     })();
   }, []);
 
-  // ---- hard triggers: user change, window focus, tab visible, MediaModal progress updates, AuthContext events
-  useEffect(() => {
-    // initial attempt on mount / user change
-    reloadProgress();
-
-    // safe delay after user hydration (prevents race after login/logout)
-    let t = null;
-    if (user?.username) {
-      t = setTimeout(() => reloadProgress(), 400);
-    }
-
-    const onFocus = () => reloadProgress();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") reloadProgress();
-    };
-    const onProgressEvent = () => reloadProgress();
-    const onUserChanged = () => reloadProgress();
-    const onUserLoggedOut = () => setProgressMap({});
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-    window.addEventListener("nil:user-changed", onUserChanged);
-    window.addEventListener("nil:user-logged-out", onUserLoggedOut);
-
-    return () => {
-      if (t) clearTimeout(t);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-      window.removeEventListener("nil:user-changed", onUserChanged);
-      window.removeEventListener("nil:user-logged-out", onUserLoggedOut);
-    };
-  }, [user?.username, reloadProgress]);
-
-  // ---- gentle polling every 10s (keeps UI fresh if another tab updated progress)
+  // پولینگ ملایم (در صورت باز بودن صفحه)
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page">
+    // نکته مهم: key باعث می‌شود با تغییر user صفحه Remount شود
+    <div key={user?.username || "anon"} className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
-      {/* ستاره‌ها فقط نیمهٔ بالا */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
         <StarOverlay />
       </div>
@@ -171,7 +160,6 @@ export default function Helix01() {
               const done = !!p?.completed || percent === 100;
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
-                  {/* progress badge (video only) */}
                   <div
                     style={{
                       position: "absolute",
