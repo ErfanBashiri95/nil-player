@@ -19,22 +19,7 @@ export default function Helix02() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
-
-  // برای Remount مطمئن بعد از تغییر یوزر
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  // ⬇️ پچ A: رفرش خودکار یک‌باره پس از لاگین
-  useEffect(() => {
-    if (!user?.username) return;
-    const flag = `nilplayer.autorefresh.once::${user.username}`;
-    const already = sessionStorage.getItem(flag);
-    if (!already) {
-      sessionStorage.setItem(flag, "1");
-      setTimeout(() => {
-        window.location.replace(window.location.href);
-      }, 120);
-    }
-  }, [user?.username]);
+  const [refreshKey, setRefreshKey] = useState(0); // Remount
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -75,12 +60,18 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user, sessions]);
 
-  // auto refresh hooks + افزایش refreshKey روی تغییر Auth
+  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN" || evt.event === "SIGNED_OUT") {
-        setRefreshKey((k) => k + 1); // برای Remount
-        reloadProgress(); // برای آپدیت سریع
+      if (evt.event === "SIGNED_OUT") {
+        setRefreshKey((k) => k + 1);
+      }
+      if (evt.event === "SIGNED_IN") {
+        setRefreshKey((k) => k + 1);
+        reloadProgress();
+        setTimeout(() => {
+          try { window.location.replace(window.location.href); } catch {}
+        }, 120);
       }
     });
 
@@ -147,7 +138,6 @@ export default function Helix02() {
   }, [reloadProgress]);
 
   return (
-    // ⬇️ پچ B: Remount بر اساس username و refreshKey
     <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
       <HeaderBar />
       <div className="helix-bg" />
