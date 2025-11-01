@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
 import "../styles/helix01.css";
@@ -21,7 +21,10 @@ export default function Helix01() {
   const [ready, setReady] = useState(false);
 
   const reloadProgress = useCallback(async () => {
-    if (!user || sessions.length === 0) return;
+    if (!user?.username || sessions.length === 0) return;
+    // مطمئن شو سشن احراز هویت آماده است
+    await supabase.auth.getSession();
+
     const ids = sessions.map((s) => s.id);
     const { data, error } = await supabase
       .from("nilplayer_progress")
@@ -43,13 +46,13 @@ export default function Helix01() {
       };
     }
     setProgressMap(map);
-  }, [user, sessions]);
+  }, [user?.username, sessions]);
 
-  // رفرش مطمئن با دو retry سبک
-  const smartRefresh = useCallback(() => {
+  // بوت‌استرپ مطمئن: چند فچ پله‌ای
+  const bootstrapRefresh = useCallback(() => {
     reloadProgress();
-    const t1 = setTimeout(reloadProgress, 300);
-    const t2 = setTimeout(reloadProgress, 1500);
+    const t1 = setTimeout(reloadProgress, 400);
+    const t2 = setTimeout(reloadProgress, 1800);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [reloadProgress]);
 
@@ -69,8 +72,8 @@ export default function Helix01() {
 
   const closeModal = useCallback(() => {
     setModal(null);
-    smartRefresh();
-  }, [smartRefresh]);
+    bootstrapRefresh();
+  }, [bootstrapRefresh]);
 
   // ESC
   useEffect(() => {
@@ -102,33 +105,30 @@ export default function Helix01() {
     })();
   }, []);
 
-  // وقتی user یا sessions آماده شد، بلافاصله رفرش مطمئن
+  // وقتی user و sessions آماده شدند → بوت‌استرپ
   useEffect(() => {
-    if (user && sessions.length > 0) {
-      const cleanup = smartRefresh();
-      return cleanup;
+    if (user?.username && sessions.length > 0) {
+      return bootstrapRefresh();
     }
-  }, [user, sessions.length, smartRefresh]);
+  }, [user?.username, sessions.length, bootstrapRefresh]);
 
-  // بعد از ready=true هم یک همگام‌سازی فوری
+  // بعد از ready=true هم بوت‌استرپ
   useEffect(() => {
     if (ready) {
-      const cleanup = smartRefresh();
-      return cleanup;
+      return bootstrapRefresh();
     }
-  }, [ready, smartRefresh]);
+  }, [ready, bootstrapRefresh]);
 
-  // رویدادهای محیطی
+  // رویدادهای محیطی + Supabase
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      // امضای درست: (event, session)
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        smartRefresh();
+      if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        bootstrapRefresh();
       }
     });
-    const onFocus = () => smartRefresh();
-    const onVisible = () => { if (document.visibilityState === "visible") smartRefresh(); };
-    const onProgressEvent = () => smartRefresh();
+    const onFocus = () => bootstrapRefresh();
+    const onVisible = () => { if (document.visibilityState === "visible") bootstrapRefresh(); };
+    const onProgressEvent = () => bootstrapRefresh();
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
@@ -140,7 +140,7 @@ export default function Helix01() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [smartRefresh]);
+  }, [bootstrapRefresh]);
 
   // پولینگ ملایم
   useEffect(() => {
