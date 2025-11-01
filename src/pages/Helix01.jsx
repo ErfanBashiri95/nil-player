@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
 import "../styles/helix01.css";
@@ -19,38 +19,7 @@ export default function Helix01() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
-
-  // ---- warmReload: هر جا لازم شد، همین را صدا می‌زنیم تا بدون ریفرش دستی پروگرس بیاید
-  const lastUsernameRef = useRef(null);
-  const warmReload = useCallback(async (forcedUsername) => {
-    const uname = forcedUsername ?? user?.username ?? lastUsernameRef.current;
-    if (!uname) return;
-    lastUsernameRef.current = uname;
-
-    const { data, error } = await supabase
-      .from("nilplayer_progress")
-      .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", uname)
-      .eq("course_code", "HELIX01");
-
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
-
-    const map = {};
-    for (const r of data || []) {
-      const total = Number(r.total_seconds || 0);
-      const base = Number(r.watched_seconds || r.last_position || 0);
-      const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
-      map[r.session_id] = {
-        percent,
-        last_position: Number(r.last_position || 0),
-        completed: !!r.completed,
-      };
-    }
-    setProgressMap(map);
-  }, [user?.username]);
+  const [refreshKey, setRefreshKey] = useState(0); // برای Remount مطمئن
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -66,24 +35,50 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // ---- اتصالات اتھنتیکیشن و فوکِس/ویزیبیلیتی
+  const reloadProgress = useCallback(async () => {
+    if (!user || sessions.length === 0) return;
+    const ids = sessions.map((s) => s.id);
+    const { data, error } = await supabase
+      .from("nilplayer_progress")
+      .select("session_id, watched_seconds, total_seconds, completed, last_position")
+      .eq("username", user.username)
+      .in("session_id", ids);
+
+    if (error) { console.error("fetch progress error:", error); return; }
+
+    const map = {};
+    for (const r of data || []) {
+      const total = Number(r.total_seconds || 0);
+      const base = Number(r.watched_seconds || r.last_position || 0);
+      const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
+      map[r.session_id] = {
+        percent,
+        last_position: Number(r.last_position || 0),
+        completed: !!r.completed,
+      };
+    }
+    setProgressMap(map);
+  }, [user, sessions]);
+
+  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
   useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange(async (evt, session) => {
-      const name = typeof evt === "string" ? evt : evt?.event;
-      if (name === "SIGNED_IN" || name === "INITIAL_SESSION" || name === "TOKEN_REFRESHED") {
-        const u = session?.user;
-        const m = u?.user_metadata || {};
-        const uname = m.username || m.user_name || u?.email || user?.username || null;
-        await warmReload(uname);
+    const sub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_OUT") {
+        setRefreshKey((k) => k + 1);
       }
-      if (name === "SIGNED_OUT") {
-        setProgressMap({});
+      if (evt.event === "SIGNED_IN") {
+        setRefreshKey((k) => k + 1);
+        // اول تلاش برای لود، بعد ریفرش نرم برای اطمینان
+        reloadProgress();
+        setTimeout(() => {
+          try { window.location.replace(window.location.href); } catch {}
+        }, 120);
       }
     });
 
-    const onFocus = () => warmReload();
-    const onVisible = () => { if (document.visibilityState === "visible") warmReload(); };
-    const onProgressEvent = () => warmReload();
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
@@ -95,21 +90,19 @@ export default function Helix01() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [warmReload]);
+  }, [reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
-    warmReload();
+    reloadProgress();
   };
 
-  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closeModal]);
 
-  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -126,27 +119,18 @@ export default function Helix01() {
           videoUrl: s.video_url, audioUrl: s.audio_url,
         })));
       }
-      setTimeout(() => setReady(true), 60);
+      setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
-  useEffect(() => { warmReload(); }, [warmReload]);
-
-  // وقتی UI آماده شد، یک warmReload بزن (راه‌حل ریفرش خودکار بی‌دردسر)
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
   useEffect(() => {
-    if (ready) warmReload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
-
-  // پولینگ ملایم
-  useEffect(() => {
-    const id = setInterval(() => warmReload(), 10000);
+    const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
-  }, [warmReload]);
+  }, [reloadProgress]);
 
   return (
-    <div className="helix-page">
+    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
       <HeaderBar />
       <div className="helix-bg" />
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>

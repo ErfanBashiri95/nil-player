@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
+import "../styles/helix02.css";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
-import "../styles/helix01.css";
 import { supabase } from "../lib/supabaseClient";
 import { useAuth } from "../context/AuthContext";
 
@@ -12,31 +12,39 @@ import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
 import { getProgress } from "../utils/progress";
 
-export default function Helix01() {
+export default function Helix02() {
   const { user } = useAuth();
 
   const [modal, setModal] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0); // Remount
 
-  // ---- warmReload: هر جا لازم شد، همین را صدا می‌زنیم تا بدون ریفرش دستی پروگرس بیاید
-  const lastUsernameRef = useRef(null);
-  const warmReload = useCallback(async (forcedUsername) => {
-    const uname = forcedUsername ?? user?.username ?? lastUsernameRef.current;
-    if (!uname) return;
-    lastUsernameRef.current = uname;
+  const openMedia = async (type, url, title, sessionId) => {
+    let initialTime = 0;
+    if (type === "video") {
+      const p = progressMap[sessionId];
+      if (p?.last_position > 0) {
+        initialTime = Number(p.last_position);
+      } else if (user?.username) {
+        const { data } = await getProgress(user.username, sessionId);
+        initialTime = Number(data?.last_position || 0);
+      }
+    }
+    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
+  };
 
+  const reloadProgress = useCallback(async () => {
+    if (!user || sessions.length === 0) return;
+    const ids = sessions.map((s) => s.id);
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", uname)
-      .eq("course_code", "HELIX01");
+      .eq("username", user.username)
+      .in("session_id", ids);
 
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
+    if (error) { console.error("fetch progress error:", error); return; }
 
     const map = {};
     for (const r of data || []) {
@@ -50,40 +58,26 @@ export default function Helix01() {
       };
     }
     setProgressMap(map);
-  }, [user?.username]);
+  }, [user, sessions]);
 
-  const openMedia = async (type, url, title, sessionId) => {
-    let initialTime = 0;
-    if (type === "video") {
-      const p = progressMap[sessionId];
-      if (p?.last_position > 0) {
-        initialTime = Number(p.last_position);
-      } else if (user?.username) {
-        const { data } = await getProgress(user.username, sessionId);
-        initialTime = Number(data?.last_position || 0);
-      }
-    }
-    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
-  };
-
-  // ---- اتصالات اتھنتیکیشن و فوکِس/ویزیبیلیتی
+  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
   useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange(async (evt, session) => {
-      const name = typeof evt === "string" ? evt : evt?.event;
-      if (name === "SIGNED_IN" || name === "INITIAL_SESSION" || name === "TOKEN_REFRESHED") {
-        const u = session?.user;
-        const m = u?.user_metadata || {};
-        const uname = m.username || m.user_name || u?.email || user?.username || null;
-        await warmReload(uname);
+    const sub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_OUT") {
+        setRefreshKey((k) => k + 1);
       }
-      if (name === "SIGNED_OUT") {
-        setProgressMap({});
+      if (evt.event === "SIGNED_IN") {
+        setRefreshKey((k) => k + 1);
+        reloadProgress();
+        setTimeout(() => {
+          try { window.location.replace(window.location.href); } catch {}
+        }, 120);
       }
     });
 
-    const onFocus = () => warmReload();
-    const onVisible = () => { if (document.visibilityState === "visible") warmReload(); };
-    const onProgressEvent = () => warmReload();
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
@@ -95,11 +89,11 @@ export default function Helix01() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
-  }, [warmReload]);
+  }, [reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
-    warmReload();
+    reloadProgress();
   };
 
   // ESC
@@ -112,52 +106,53 @@ export default function Helix01() {
   // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
-      const [_, { data, error }] = await Promise.all([
-        preloadImage("/assets/helix01_bg.png"),
-        supabase
-          .from("nilplayer_sessions")
-          .select("id, title, desc:desc, video_url, audio_url, order_index")
-          .eq("course_code", "HELIX01")
-          .order("order_index", { ascending: true }),
-      ]);
+      await Promise.allSettled([preloadImage("/assets/helix02_bg.png")]);
+      const { data, error } = await supabase
+        .from("nilplayer_sessions")
+        .select("id, title, desc:desc, video_url, audio_url, order_index")
+        .eq("course_code", "HELIX02")
+        .order("order_index", { ascending: true });
+
       if (!error && data) {
-        setSessions(data.map((s) => ({
-          id: s.id, title: s.title, desc: s.desc,
-          videoUrl: s.video_url, audioUrl: s.audio_url,
-        })));
+        setSessions(
+          data.map((s) => ({
+            id: s.id,
+            title: s.title,
+            desc: s.desc,
+            videoUrl: s.video_url,
+            audioUrl: s.audio_url,
+          }))
+        );
+      } else {
+        console.error("fetch sessions error:", error);
       }
-      setTimeout(() => setReady(true), 60);
+
+      setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
-  useEffect(() => { warmReload(); }, [warmReload]);
-
-  // وقتی UI آماده شد، یک warmReload بزن (راه‌حل ریفرش خودکار بی‌دردسر)
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
   useEffect(() => {
-    if (ready) warmReload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
-
-  // پولینگ ملایم
-  useEffect(() => {
-    const id = setInterval(() => warmReload(), 10000);
+    const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
-  }, [warmReload]);
+  }, [reloadProgress]);
 
   return (
-    <div className="helix-page">
+    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
       <HeaderBar />
       <div className="helix-bg" />
+
+      {/* ستاره‌ها فقط نیمهٔ بالایی */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
         <StarOverlay />
       </div>
+
       <div className="helix-aurora" />
       <div className="helix-shade" />
 
       <main className="helix-content" style={{ visibility: ready ? "visible" : "hidden" }}>
         <section className="helix-hero">
-          <h1 className="helix-title">{STR("helix01_title")}</h1>
+          <h1 className="helix-title">{STR("helix02_title")}</h1>
           <p className="helix-subtitle">{STR("subtitle")}</p>
         </section>
 
@@ -167,15 +162,25 @@ export default function Helix01() {
               const p = progressMap[s.id];
               const percent = p?.percent ?? 0;
               const done = !!p?.completed || percent === 100;
+
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
                   <div
                     style={{
-                      position: "absolute", top: 8, left: 8, display: "inline-flex",
-                      alignItems: "center", gap: 6, padding: "4px 8px",
-                      borderRadius: 999, fontSize: 12, fontWeight: 800, color: "#fff",
+                      position: "absolute",
+                      top: 8,
+                      left: 8,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "4px 8px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      color: "#fff",
                       background: done ? "linear-gradient(90deg,#16a34a,#22c55e)" : "rgba(255,255,255,.18)",
-                      border: "1px solid rgba(255,255,255,.28)", backdropFilter: "blur(4px)",
+                      border: "1px solid rgba(255,255,255,.28)",
+                      backdropFilter: "blur(4px)",
                     }}
                     title={done ? "کامل دیده شده" : "درصد تماشا (فقط ویدئو)"}
                   >
@@ -207,7 +212,7 @@ export default function Helix01() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={closeModal}
+          onClose={() => { setModal(null); reloadProgress(); }}
           type={modal.type}
           url={modal.url}
           title={modal.title}
