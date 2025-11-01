@@ -14,6 +14,7 @@ import { getProgress } from "../utils/progress";
 
 export default function Helix01() {
   const { user } = useAuth();
+
   const [modal, setModal] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
@@ -33,7 +34,7 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // دریافت درصد پیشرفت از Supabase
+  // فقط با username + course_code می‌گیریم (دیگه منتظر sessions نیستیم)
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
@@ -58,53 +59,62 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // 🔹 هنگامی که user تغییر می‌کند
+  // همگام‌سازی روی تغییر وضعیت احراز هویت Supabase (اگر اصلاً داشته باشی)
   useEffect(() => {
-    if (user?.username) reloadProgress();
-    else setProgressMap({});
-  }, [user?.username, reloadProgress]);
-
-  // 🔹 گوش دادن به تغییرات login/logout و رفرش اتومات
-  useEffect(() => {
-    const onAuthLogin = () => reloadProgress();
-    const onAuthLogout = () => setProgressMap({});
-
-    window.addEventListener("nil-auth:login", onAuthLogin);
-    window.addEventListener("nil-auth:logout", onAuthLogout);
-    window.addEventListener("focus", reloadProgress);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") reloadProgress();
+    const sub = supabase.auth.onAuthStateChange((evt) => {
+      if (evt.event === "SIGNED_IN") reloadProgress();
     });
 
-    // وقتی localStorage بین تب‌ها عوض می‌شود
-    const onStorage = (e) => {
-      if (e.key === "nil_auth") reloadProgress();
-    };
-    window.addEventListener("storage", onStorage);
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
 
-    reloadProgress();
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
-      window.removeEventListener("nil-auth:login", onAuthLogin);
-      window.removeEventListener("nil-auth:logout", onAuthLogout);
-      window.removeEventListener("focus", reloadProgress);
-      document.removeEventListener("visibilitychange", reloadProgress);
-      window.removeEventListener("storage", onStorage);
+      sub?.data?.subscription?.unsubscribe?.();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
     };
   }, [reloadProgress]);
+
+  // --- (1) گوش دادن به رویداد سفارشی لاگین/لاگ‌اوت از AuthContext ---
+  useEffect(() => {
+    const onLogin = () => reloadProgress();
+    const onLogout = () => setProgressMap({});
+
+    window.addEventListener("nil-auth:login", onLogin);
+    window.addEventListener("nil-auth:logout", onLogout);
+
+    return () => {
+      window.removeEventListener("nil-auth:login", onLogin);
+      window.removeEventListener("nil-auth:logout", onLogout);
+    };
+  }, [reloadProgress]);
+
+  // --- (2) اولین همگام‌سازی مطمئن وقتی صفحه آماده شد و یوزر حاضر است ---
+  useEffect(() => {
+    if (ready && user?.username) {
+      reloadProgress();
+    }
+  }, [ready, user?.username, reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
     reloadProgress();
   };
 
+  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closeModal]);
 
-  // گرفتن جلسات و بک‌گراند
+  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -124,6 +134,15 @@ export default function Helix01() {
       setTimeout(() => setReady(true), 100);
     })();
   }, []);
+
+  // با تغییر یوزر فوراً بگیر (در اولین mount هم اگر user حاضر شد، تریگر می‌شود)
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+
+  // پولینگ ملایم
+  useEffect(() => {
+    const id = setInterval(() => reloadProgress(), 10000);
+    return () => clearInterval(id);
+  }, [reloadProgress]);
 
   return (
     <div className="helix-page">
@@ -167,10 +186,12 @@ export default function Helix01() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <button className="btn btn-primary" onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}>
-                      🎬 {STR("video")}
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
+                      {STR("video")}
                     </button>
                     <button className="btn btn-ghost" onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}>
-                      🎧 {STR("podcast")}
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎧</span>
+                      {STR("podcast")}
                     </button>
                   </div>
                 </article>
@@ -181,6 +202,7 @@ export default function Helix01() {
       </main>
 
       <PageLoader show={!ready} />
+
       {modal && (
         <MediaModal
           open={!!modal}

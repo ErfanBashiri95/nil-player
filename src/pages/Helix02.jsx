@@ -14,7 +14,8 @@ import { getProgress } from "../utils/progress";
 
 export default function Helix02() {
   const { user } = useAuth();
-  const [modal, setModal] = useState(null); // { type,url,title, sessionId, initialTime, courseCode }
+
+  const [modal, setModal] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
@@ -33,7 +34,7 @@ export default function Helix02() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
   };
 
-  // دریافت پرگرس از DB (فقط بر اساس username + course_code)
+  // فقط با username + course_code می‌گیریم
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
@@ -58,37 +59,51 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // روی تغییر یوزر
+  // روی تغییر یوزر فوراً بگیر
   useEffect(() => {
     if (user?.username) reloadProgress();
     else setProgressMap({});
   }, [user?.username, reloadProgress]);
 
-  // گوش دادن به لاگین/لاگ‌اوت و فوکِس/ویزبلیتی و تغییر localStorage
+  // --- (1) گوش دادن به رویداد سفارشی لاگین/لاگ‌اوت از AuthContext ---
   useEffect(() => {
-    const onAuthLogin = () => reloadProgress();
-    const onAuthLogout = () => setProgressMap({});
+    const onLogin = () => reloadProgress();
+    const onLogout = () => setProgressMap({});
 
-    window.addEventListener("nil-auth:login", onAuthLogin);
-    window.addEventListener("nil-auth:logout", onAuthLogout);
-    window.addEventListener("focus", reloadProgress);
-    const onVis = () => { if (document.visibilityState === "visible") reloadProgress(); };
-    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("nil-auth:login", onLogin);
+    window.addEventListener("nil-auth:logout", onLogout);
 
-    const onStorage = (e) => { if (e.key === "nil_auth") reloadProgress(); };
-    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("nil-auth:login", onLogin);
+      window.removeEventListener("nil-auth:logout", onLogout);
+    };
+  }, [reloadProgress]);
 
-    // یک بار هم در بدو ورود
+  // همگام‌سازی‌های دیگر + یکبار اولیه
+  useEffect(() => {
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
+    window.addEventListener("nilplayer:progress-updated", reloadProgress);
+
+    // یک بار در بدو ورود
     reloadProgress();
 
     return () => {
-      window.removeEventListener("nil-auth:login", onAuthLogin);
-      window.removeEventListener("nil-auth:logout", onAuthLogout);
-      window.removeEventListener("focus", reloadProgress);
-      document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", reloadProgress);
     };
   }, [reloadProgress]);
+
+  // --- (2) اولین همگام‌سازی مطمئن وقتی صفحه آماده شد و یوزر حاضر است ---
+  useEffect(() => {
+    if (ready && user?.username) {
+      reloadProgress();
+    }
+  }, [ready, user?.username, reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
@@ -155,7 +170,6 @@ export default function Helix02() {
 
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
-                  {/* Badge پیشرفت */}
                   <div
                     style={{
                       position: "absolute",
@@ -182,16 +196,10 @@ export default function Helix02() {
                   <p className="session-desc">{s.desc}</p>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
-                    >
+                    <button className="btn btn-primary" onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}>
                       🎬 {STR("video")}
                     </button>
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
-                    >
+                    <button className="btn btn-ghost" onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}>
                       🎧 {STR("podcast")}
                     </button>
                   </div>
@@ -207,7 +215,7 @@ export default function Helix02() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={closeModal}
+          onClose={() => { setModal(null); reloadProgress(); }}
           type={modal.type}
           url={modal.url}
           title={modal.title}
