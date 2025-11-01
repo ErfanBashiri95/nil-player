@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import "../styles/helix02.css";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
@@ -19,7 +19,15 @@ export default function Helix02() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // Remount
+
+  const getUname = useCallback(async () => {
+    if (user?.username) return user.username;
+    const { data } = await supabase.auth.getSession();
+    const s = data?.session?.user;
+    if (!s) return null;
+    const m = s.user_metadata || {};
+    return m.username || m.user_name || s.email || null;
+  }, [user?.username]);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -27,22 +35,26 @@ export default function Helix02() {
       const p = progressMap[sessionId];
       if (p?.last_position > 0) {
         initialTime = Number(p.last_position);
-      } else if (user?.username) {
-        const { data } = await getProgress(user.username, sessionId);
-        initialTime = Number(data?.last_position || 0);
+      } else {
+        const uname = await getUname();
+        if (uname) {
+          const { data } = await getProgress(uname, sessionId);
+          initialTime = Number(data?.last_position || 0);
+        }
       }
     }
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
   };
 
-  const reloadProgress = useCallback(async () => {
-    if (!user || sessions.length === 0) return;
-    const ids = sessions.map((s) => s.id);
+  const reloadProgress = useCallback(async (unameOverride) => {
+    const uname = unameOverride || (await getUname());
+    if (!uname) return;
+
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", user.username)
-      .in("session_id", ids);
+      .eq("username", uname)
+      .eq("course_code", "HELIX02");
 
     if (error) { console.error("fetch progress error:", error); return; }
 
@@ -58,38 +70,49 @@ export default function Helix02() {
       };
     }
     setProgressMap(map);
-  }, [user, sessions]);
+  }, [getUname]);
 
-  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
+  const warmReloadRef = useRef(null);
+  const warmReload = useCallback(async (unameMaybe) => {
+    const uname = unameMaybe || (await getUname());
+    if (!uname) return;
+    reloadProgress(uname);
+    clearTimeout(warmReloadRef.current);
+    warmReloadRef.current = setTimeout(() => reloadProgress(uname), 250);
+    setTimeout(() => reloadProgress(uname), 1000);
+  }, [getUname, reloadProgress]);
+
   useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_OUT") {
-        setRefreshKey((k) => k + 1);
+    const sub = supabase.auth.onAuthStateChange(async (evt, session) => {
+      if (evt === "SIGNED_IN" || evt === "TOKEN_REFRESHED" || evt === "INITIAL_SESSION") {
+        const m = session?.user?.user_metadata || {};
+        const uname = m.username || m.user_name || session?.user?.email || null;
+        warmReload(uname);
       }
-      if (evt.event === "SIGNED_IN") {
-        setRefreshKey((k) => k + 1);
-        reloadProgress();
-        setTimeout(() => {
-          try { window.location.replace(window.location.href); } catch {}
-        }, 120);
+      if (evt === "SIGNED_OUT") {
+        setProgressMap({});
       }
     });
 
-    const onFocus = () => reloadProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onFocus = () => warmReload();
+    const onVisible = () => { if (document.visibilityState === "visible") warmReload(); };
+    const onPageShow = (e) => { if (e.persisted) warmReload(); };
     const onProgressEvent = () => reloadProgress();
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
       sub?.data?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+      clearTimeout(warmReloadRef.current);
     };
-  }, [reloadProgress]);
+  }, [warmReload, reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
@@ -131,14 +154,15 @@ export default function Helix02() {
     })();
   }, []);
 
-  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+  useEffect(() => { warmReload(); }, [warmReload]);
+
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
+    <div className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
 
@@ -152,7 +176,7 @@ export default function Helix02() {
 
       <main className="helix-content" style={{ visibility: ready ? "visible" : "hidden" }}>
         <section className="helix-hero">
-          <h1 className="helix-title">{STR("helix02_title")}</h1>
+          <h1 className="helix02_title helix-title">{STR("helix02_title")}</h1>
           <p className="helix-subtitle">{STR("subtitle")}</p>
         </section>
 
