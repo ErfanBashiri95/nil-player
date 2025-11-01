@@ -10,11 +10,21 @@ export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const firstLoad = useRef(true);
 
-  // بازیابی از localStorage
+  // بازیابی از localStorage + نرمال‌سازی به lowercase
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const norm = parsed?.username
+          ? {
+              ...parsed,
+              username: String(parsed.username).trim().toLowerCase(),
+              id: String(parsed.username).trim().toLowerCase(),
+            }
+          : null;
+        setUser(norm);
+      }
     } catch {}
   }, []);
 
@@ -28,42 +38,38 @@ export default function AuthProvider({ children }) {
 
   const login = async (username) => {
     const u = String(username || "").trim().toLowerCase();
-    const found = allowed.find((item) => item.username.trim().toLowerCase() === u);
+    const found = allowed.find((it) => it.username.trim().toLowerCase() === u);
     if (!found) throw new Error("not-allowed");
 
     const userObj = {
-      id: found.username,
-      username: found.username,
-      course_code: (found.course_code || "").toUpperCase(),
+      id: u,
+      username: u, // همیشه lowercase
+      course_code: String(found.course_code || "").toUpperCase(),
     };
 
     setUser(userObj);
-    // مهم: با تاخیر microtask تا React ست کنه
+
+    // ایونت اعلام تغییر یوزر (کمی تاخیر تا React setState اعمال شود)
     setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("nil:user-changed", { detail: { user: userObj } })
-      );
+      window.dispatchEvent(new CustomEvent("nil:user-changed", { detail: { user: userObj } }));
     }, 50);
+
     return userObj;
   };
 
   const logout = () => {
     setUser(null);
-    setTimeout(() => {
-      window.dispatchEvent(new Event("nil:user-logged-out"));
-    }, 50);
+    setTimeout(() => window.dispatchEvent(new Event("nil:user-logged-out")), 30);
   };
 
-  // وقتی از localStorage بازیابی شد هم یکبار ایونت بفرست
+  // وقتی از localStorage بالا آمد، یکبار ایونت بده (برای ورود خودکار)
   useEffect(() => {
     if (firstLoad.current) {
       firstLoad.current = false;
       if (user) {
         setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent("nil:user-changed", { detail: { user } })
-          );
-        }, 100);
+          window.dispatchEvent(new CustomEvent("nil:user-changed", { detail: { user } }));
+        }, 80);
       }
     }
   }, [user]);

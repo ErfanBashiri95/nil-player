@@ -41,10 +41,8 @@ export default function Helix02() {
       .eq("username", user.username)
       .eq("course_code", "HELIX02");
 
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
+    if (error) { console.error("fetch progress error:", error); return; }
+
     const map = {};
     for (const r of data || []) {
       const total = Number(r.total_seconds || 0);
@@ -60,10 +58,7 @@ export default function Helix02() {
   }, [user?.username]);
 
   useEffect(() => {
-    if (!user?.username) {
-      setProgressMap({});
-      return;
-    }
+    if (!user?.username) { setProgressMap({}); return; }
     reloadProgress();
     const t1 = setTimeout(reloadProgress, 300);
     const t2 = setTimeout(reloadProgress, 1000);
@@ -77,18 +72,23 @@ export default function Helix02() {
       const t2 = setTimeout(reloadProgress, 1000);
       return () => { clearTimeout(t1); clearTimeout(t2); };
     };
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+
     window.addEventListener("nil:user-changed", onUserChanged);
     window.addEventListener("nil:user-logged-out", () => setProgressMap({}));
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       window.removeEventListener("nil:user-changed", onUserChanged);
       window.removeEventListener("nil:user-logged-out", () => {});
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [reloadProgress]);
 
-  const closeModal = () => {
-    setModal(null);
-    reloadProgress();
-  };
+  const closeModal = () => { setModal(null); reloadProgress(); };
 
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
@@ -108,11 +108,7 @@ export default function Helix02() {
       if (!error && data) {
         setSessions(
           data.map((s) => ({
-            id: s.id,
-            title: s.title,
-            desc: s.desc,
-            videoUrl: s.video_url,
-            audioUrl: s.audio_url,
+            id: s.id, title: s.title, desc: s.desc, videoUrl: s.video_url, audioUrl: s.audio_url,
           }))
         );
       } else {

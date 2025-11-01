@@ -33,19 +33,16 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // فقط با username + course_code می‌گیریم (نیازی به لیست sessions برای فیلتر نیست)
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", user.username)
+      .eq("username", user.username) // user.username اکنون همیشه lowercase
       .eq("course_code", "HELIX01");
 
-    if (error) {
-      console.error("fetch progress error:", error);
-      return;
-    }
+    if (error) { console.error("fetch progress error:", error); return; }
+
     const map = {};
     for (const r of data || []) {
       const total = Number(r.total_seconds || 0);
@@ -60,20 +57,15 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // به تغییر یوزر خیلی حساس باش: پاک‌سازی در لاگ‌اوت و چندین بار fetch بعد از لاگ‌این
+  // با هر تغییر یوزر → واکشی چندمرحله‌ای + پاک‌سازی در لاگ‌اوت
   useEffect(() => {
-    if (!user?.username) {
-      setProgressMap({});
-      return;
-    }
-    // fetch چندمرحله‌ای برای اطمینان
+    if (!user?.username) { setProgressMap({}); return; }
     reloadProgress();
     const t1 = setTimeout(reloadProgress, 300);
     const t2 = setTimeout(reloadProgress, 1000);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [user?.username, reloadProgress]);
 
-  // گوش به ایونت سفارشی (در صورت استفاده از AuthContext ایونت‌دار)
   useEffect(() => {
     const onUserChanged = () => {
       reloadProgress();
@@ -81,27 +73,30 @@ export default function Helix01() {
       const t2 = setTimeout(reloadProgress, 1000);
       return () => { clearTimeout(t1); clearTimeout(t2); };
     };
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+
     window.addEventListener("nil:user-changed", onUserChanged);
     window.addEventListener("nil:user-logged-out", () => setProgressMap({}));
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       window.removeEventListener("nil:user-changed", onUserChanged);
       window.removeEventListener("nil:user-logged-out", () => {});
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [reloadProgress]);
 
-  const closeModal = () => {
-    setModal(null);
-    reloadProgress();
-  };
+  const closeModal = () => { setModal(null); reloadProgress(); };
 
-  // ESC
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && closeModal();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closeModal]);
 
-  // جلسات + بک‌گراند
   useEffect(() => {
     (async () => {
       const [_, { data, error }] = await Promise.all([
@@ -113,30 +108,21 @@ export default function Helix01() {
           .order("order_index", { ascending: true }),
       ]);
       if (!error && data) {
-        setSessions(
-          data.map((s) => ({
-            id: s.id,
-            title: s.title,
-            desc: s.desc,
-            videoUrl: s.video_url,
-            audioUrl: s.audio_url,
-          }))
-        );
-      } else {
-        console.error("fetch sessions error:", error);
+        setSessions(data.map((s) => ({
+          id: s.id, title: s.title, desc: s.desc, videoUrl: s.video_url, audioUrl: s.audio_url
+        })));
       }
       setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // پولینگ ملایم (در صورت باز بودن صفحه)
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
+  // کل صفحه با کلید یوزر remount می‌شود
   return (
-    // نکته مهم: key باعث می‌شود با تغییر user صفحه Remount شود
     <div key={user?.username || "anon"} className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
@@ -162,20 +148,10 @@ export default function Helix01() {
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
                   <div
                     style={{
-                      position: "absolute",
-                      top: 8,
-                      left: 8,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "4px 8px",
-                      borderRadius: 999,
-                      fontSize: 12,
-                      fontWeight: 800,
-                      color: "#fff",
+                      position: "absolute", top: 8, left: 8, display: "inline-flex", alignItems: "center",
+                      gap: 6, padding: "4px 8px", borderRadius: 999, fontSize: 12, fontWeight: 800, color: "#fff",
                       background: done ? "linear-gradient(90deg,#16a34a,#22c55e)" : "rgba(255,255,255,.18)",
-                      border: "1px solid rgba(255,255,255,.28)",
-                      backdropFilter: "blur(4px)",
+                      border: "1px solid rgba(255,255,255,.28)", backdropFilter: "blur(4px)",
                     }}
                     title={done ? "کامل دیده شده" : "درصد تماشا (فقط ویدئو)"}
                   >
