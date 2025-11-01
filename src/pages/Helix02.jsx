@@ -20,10 +20,25 @@ export default function Helix02() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  const reloadProgress = useCallback(async () => {
-    if (!user?.username || sessions.length === 0) return;
-    await supabase.auth.getSession();
+  // برای Remount امن بعد از SIGNED_IN و بستن مدیا
+  const [refreshKey, setRefreshKey] = useState(0);
 
+  const openMedia = async (type, url, title, sessionId) => {
+    let initialTime = 0;
+    if (type === "video") {
+      const p = progressMap[sessionId];
+      if (p?.last_position > 0) {
+        initialTime = Number(p.last_position);
+      } else if (user?.username) {
+        const { data } = await getProgress(user.username, sessionId);
+        initialTime = Number(data?.last_position || 0);
+      }
+    }
+    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
+  };
+
+  const reloadProgress = useCallback(async () => {
+    if (!user || sessions.length === 0) return;
     const ids = sessions.map((s) => s.id);
     const { data, error } = await supabase
       .from("nilplayer_progress")
@@ -45,33 +60,53 @@ export default function Helix02() {
       };
     }
     setProgressMap(map);
-  }, [user?.username, sessions]);
+  }, [user, sessions]);
 
-  const bootstrapRefresh = useCallback(() => {
-    reloadProgress();
-    const t1 = setTimeout(reloadProgress, 400);
-    const t2 = setTimeout(reloadProgress, 1800);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+  const refreshAfterSignIn = useCallback(async () => {
+    try {
+      await new Promise(r => setTimeout(r, 350));
+      await supabase.auth.getSession();
+      setRefreshKey(k => k + 1);
+      await reloadProgress();
+    } catch (e) {
+      console.warn("post-login refresh failed:", e);
+      setRefreshKey(k => k + 1);
+      await reloadProgress();
+    }
   }, [reloadProgress]);
 
-  const openMedia = useCallback(async (type, url, title, sessionId) => {
-    let initialTime = 0;
-    if (type === "video") {
-      const p = progressMap[sessionId];
-      if (p?.last_position > 0) {
-        initialTime = Number(p.last_position);
-      } else if (user?.username) {
-        const { data } = await getProgress(user.username, sessionId);
-        initialTime = Number(data?.last_position || 0);
+  // auto refresh hooks
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_OUT") {
+        setProgressMap({});
       }
-    }
-    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
-  }, [progressMap, user?.username]);
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        await refreshAfterSignIn();
+      }
+    });
 
-  const closeModal = useCallback(() => {
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
+
+    return () => {
+      sub?.subscription?.unsubscribe?.();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+    };
+  }, [reloadProgress, refreshAfterSignIn]);
+
+  const closeModal = () => {
     setModal(null);
-    bootstrapRefresh();
-  }, [bootstrapRefresh]);
+    setRefreshKey(k => k + 1);
+    reloadProgress();
+  };
 
   // ESC
   useEffect(() => {
@@ -108,51 +143,15 @@ export default function Helix02() {
     })();
   }, []);
 
-  // وقتی user و sessions آماده شدند → بوت‌استرپ
-  useEffect(() => {
-    if (user?.username && sessions.length > 0) {
-      return bootstrapRefresh();
-    }
-  }, [user?.username, sessions.length, bootstrapRefresh]);
+  useEffect(() => { reloadProgress(); }, [reloadProgress]);
 
-  // بعد از ready=true هم بوت‌استرپ
-  useEffect(() => {
-    if (ready) {
-      return bootstrapRefresh();
-    }
-  }, [ready, bootstrapRefresh]);
-
-  // رویدادهای محیطی + Supabase
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "INITIAL_SESSION" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        bootstrapRefresh();
-      }
-    });
-    const onFocus = () => bootstrapRefresh();
-    const onVisible = () => { if (document.visibilityState === "visible") bootstrapRefresh(); };
-    const onProgressEvent = () => bootstrapRefresh();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      sub?.subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
-  }, [bootstrapRefresh]);
-
-  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page">
+    <div className="helix-page" key={refreshKey}>
       <HeaderBar />
       <div className="helix-bg" />
 
