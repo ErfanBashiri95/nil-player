@@ -20,9 +20,6 @@ export default function Helix01() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // برای Remount امن بعد از SIGNED_IN و بستن مدیا
-  const [refreshKey, setRefreshKey] = useState(0);
-
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
     if (type === "video") {
@@ -37,14 +34,14 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
+  // فقط با username + course_code می‌گیریم (دیگر به sessions وابسته نیست)
   const reloadProgress = useCallback(async () => {
-    if (!user || sessions.length === 0) return;
-    const ids = sessions.map((s) => s.id);
+    if (!user?.username) return;
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
       .eq("username", user.username)
-      .in("session_id", ids);
+      .eq("course_code", "HELIX01");
 
     if (error) { console.error("fetch progress error:", error); return; }
 
@@ -60,53 +57,18 @@ export default function Helix01() {
       };
     }
     setProgressMap(map);
-  }, [user, sessions]);
+  }, [user?.username]);
 
-  // اطمینان از آماده بودن نشست پس از لاگین
-  const refreshAfterSignIn = useCallback(async () => {
-    try {
-      // کمی تاخیر تا RLS/توکن ست شود
-      await new Promise(r => setTimeout(r, 350));
-      await supabase.auth.getSession(); // تضمین در دسترس بودن سشن
-      setRefreshKey(k => k + 1); // Remount امن
-      await reloadProgress();
-    } catch (e) {
-      console.warn("post-login refresh failed:", e);
-      setRefreshKey(k => k + 1);
-      await reloadProgress();
-    }
+  // تضمین «بار اول بعد از لاگین یا بازگشت به صفحه» بدون نیاز به رفرش دستی
+  const ensureInitialProgress = useCallback(async () => {
+    // صبر کوتاه برای پایدار شدن user و توکن
+    await supabase.auth.getSession();
+    await reloadProgress();
+    setTimeout(reloadProgress, 350); // دفعه‌ی دوم برای رفع هر ریس احتمالی
   }, [reloadProgress]);
-
-  // auto refresh hooks
-  useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_OUT") {
-        setProgressMap({});
-      }
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
-        await refreshAfterSignIn();
-      }
-    });
-
-    const onFocus = () => reloadProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
-    const onProgressEvent = () => reloadProgress();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      sub?.subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
-  }, [reloadProgress, refreshAfterSignIn]);
 
   const closeModal = () => {
     setModal(null);
-    setRefreshKey(k => k + 1); // بلافاصله Remount کارت‌ها
     reloadProgress();
   };
 
@@ -134,21 +96,50 @@ export default function Helix01() {
           videoUrl: s.video_url, audioUrl: s.audio_url,
         })));
       }
-      setTimeout(() => setReady(true), 100);
+      setReady(true);
+      // همین‌جا هم یک‌بار مطمئن می‌شویم
+      ensureInitialProgress();
     })();
-  }, []);
+  }, [ensureInitialProgress]);
 
-  // وقتی user یا sessions آماده شد
+  // تغییر یوزر → فوراً بگیر
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
 
-  // پولینگ آرام
+  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
+  // همگام‌سازی با رویدادهای auth/focus/visibility + تریگر داخلی مدیا
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_IN") {
+        await ensureInitialProgress();
+      }
+      if (event === "SIGNED_OUT") {
+        setProgressMap({});
+      }
+    });
+
+    const onFocus = () => ensureInitialProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") ensureInitialProgress(); };
+    const onProgressEvent = () => reloadProgress();
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
+
+    return () => {
+      subscription?.unsubscribe?.();
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+    };
+  }, [ensureInitialProgress, reloadProgress]);
+
   return (
-    <div className="helix-page" key={refreshKey}>
+    <div className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50vh", overflow: "hidden", zIndex: 1, pointerEvents: "none" }}>
