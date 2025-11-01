@@ -5,21 +5,40 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 const STORAGE_KEY = "nil_auth";
+const REFRESH_KEY_PREFIX = "nil_auto_refresh_once::";
+
+function clearAutoRefreshFlags() {
+  try {
+    // پاک کردن همه کلیدهای مربوط به ریفرش خودکار
+    const toDelete = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith(REFRESH_KEY_PREFIX)) toDelete.push(k);
+    }
+    toDelete.forEach((k) => sessionStorage.removeItem(k));
+  } catch {}
+}
+
+function clearCurrentPathFlagFor(username) {
+  try {
+    if (!username) return;
+    const key = `${REFRESH_KEY_PREFIX}${username}::${window.location.pathname}`;
+    sessionStorage.removeItem(key);
+  } catch {}
+}
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
 
-  // هیدریت اولیه از localStorage
+  // بازیابی از localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) setUser(JSON.parse(raw));
     } catch {}
-    setAuthReady(true);
   }, []);
 
-  // ماندگاری وضعیت در localStorage
+  // ماندگاری وضعیت
   useEffect(() => {
     try {
       if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
@@ -27,6 +46,7 @@ export default function AuthProvider({ children }) {
     } catch {}
   }, [user]);
 
+  // ورود فقط با یوزرنیم موجود در whitelist
   const login = async (username) => {
     const u = String(username || "").trim().toLowerCase();
     const found = allowed.find(item => item.username.trim().toLowerCase() === u);
@@ -35,28 +55,27 @@ export default function AuthProvider({ children }) {
     const userObj = {
       id: found.username,
       username: found.username,
-      course_code: (found.course_code || "").toUpperCase(),
+      course_code: (found.course_code || "").toUpperCase()
     };
 
+    // قبل از ست کردن کاربر، فلگ ریفرش همین مسیر برای این کاربر رو پاک کن
+    clearCurrentPathFlagFor(userObj.username);
     setUser(userObj);
 
-    // اطلاع‌رسانی سراسری برای صفحات
-    try {
-      window.dispatchEvent(new CustomEvent("nil-auth:login", { detail: { user: userObj } }));
-    } catch {}
+    // رویداد کمکی برای صفحات (اختیاری)
+    try { window.dispatchEvent(new CustomEvent("nil:user-changed", { detail: { username: userObj.username } })); } catch {}
     return userObj;
   };
 
   const logout = () => {
-    const prev = user;
+    // کلیدهای ریفرش خودکار رو پاک کن تا ورود بعدی یک‌بار ریفرش انجام بشه
+    clearAutoRefreshFlags();
     setUser(null);
-    try {
-      window.dispatchEvent(new CustomEvent("nil-auth:logout", { detail: { user: prev } }));
-    } catch {}
+    try { window.dispatchEvent(new Event("nil:user-logged-out")); } catch {}
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, authReady }}>
+    <AuthContext.Provider value={{ user, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
