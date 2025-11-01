@@ -34,7 +34,7 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // فقط با username + course_code می‌گیریم (دیگر به sessions وابسته نیست)
+  // فقط با username + course_code می‌گیریم (بدون وابستگی به sessions)
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
@@ -59,12 +59,38 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // تضمین «بار اول بعد از لاگین یا بازگشت به صفحه» بدون نیاز به رفرش دستی
-  const ensureInitialProgress = useCallback(async () => {
-    // صبر کوتاه برای پایدار شدن user و توکن
-    await supabase.auth.getSession();
-    await reloadProgress();
-    setTimeout(reloadProgress, 350); // دفعه‌ی دوم برای رفع هر ریس احتمالی
+  // هر بار user عوض شد، بلافاصله sync کن/پاک کن
+  useEffect(() => {
+    if (user?.username) reloadProgress();
+    else setProgressMap({});
+  }, [user?.username, reloadProgress]);
+
+  // لیسنرهای قابل اعتماد (بدون supabase.auth)
+  useEffect(() => {
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
+    const onLogin = () => reloadProgress();
+    const onLogout = () => setProgressMap({}); // پاک‌سازی نمای پیشرفت
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
+    window.addEventListener("nil-auth:login", onLogin);
+    window.addEventListener("nil-auth:logout", onLogout);
+
+    // sync از طریق تغییر localStorage بین تب‌ها/سشن‌ها
+    const onStorage = (e) => { if (e.key === "nil_auth") reloadProgress(); };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+      window.removeEventListener("nil-auth:login", onLogin);
+      window.removeEventListener("nil-auth:logout", onLogout);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [reloadProgress]);
 
   const closeModal = () => {
@@ -96,47 +122,15 @@ export default function Helix01() {
           videoUrl: s.video_url, audioUrl: s.audio_url,
         })));
       }
-      setReady(true);
-      // همین‌جا هم یک‌بار مطمئن می‌شویم
-      ensureInitialProgress();
+      setTimeout(() => setReady(true), 100);
     })();
-  }, [ensureInitialProgress]);
-
-  // تغییر یوزر → فوراً بگیر
-  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+  }, []);
 
   // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
-
-  // همگام‌سازی با رویدادهای auth/focus/visibility + تریگر داخلی مدیا
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_IN") {
-        await ensureInitialProgress();
-      }
-      if (event === "SIGNED_OUT") {
-        setProgressMap({});
-      }
-    });
-
-    const onFocus = () => ensureInitialProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") ensureInitialProgress(); };
-    const onProgressEvent = () => reloadProgress();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
-  }, [ensureInitialProgress, reloadProgress]);
 
   return (
     <div className="helix-page">

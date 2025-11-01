@@ -58,10 +58,35 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user?.username]);
 
-  const ensureInitialProgress = useCallback(async () => {
-    await supabase.auth.getSession();
-    await reloadProgress();
-    setTimeout(reloadProgress, 350);
+  useEffect(() => {
+    if (user?.username) reloadProgress();
+    else setProgressMap({});
+  }, [user?.username, reloadProgress]);
+
+  useEffect(() => {
+    const onFocus = () => reloadProgress();
+    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
+    const onProgressEvent = () => reloadProgress();
+    const onLogin = () => reloadProgress();
+    const onLogout = () => setProgressMap({});
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
+    window.addEventListener("nil-auth:login", onLogin);
+    window.addEventListener("nil-auth:logout", onLogout);
+
+    const onStorage = (e) => { if (e.key === "nil_auth") reloadProgress(); };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
+      window.removeEventListener("nil-auth:login", onLogin);
+      window.removeEventListener("nil-auth:logout", onLogout);
+      window.removeEventListener("storage", onStorage);
+    };
   }, [reloadProgress]);
 
   const closeModal = () => {
@@ -100,46 +125,14 @@ export default function Helix02() {
         console.error("fetch sessions error:", error);
       }
 
-      setReady(true);
-      ensureInitialProgress();
+      setTimeout(() => setReady(true), 100);
     })();
-  }, [ensureInitialProgress]);
+  }, []);
 
-  // تغییر یوزر → فوراً بگیر
-  useEffect(() => { reloadProgress(); }, [reloadProgress]);
-
-  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
-
-  // همگام‌سازی با رویدادهای auth/focus/visibility + تریگر داخلی مدیا
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event) => {
-      if (event === "SIGNED_IN") {
-        await ensureInitialProgress();
-      }
-      if (event === "SIGNED_OUT") {
-        setProgressMap({});
-      }
-    });
-
-    const onFocus = () => ensureInitialProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") ensureInitialProgress(); };
-    const onProgressEvent = () => reloadProgress();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
-  }, [ensureInitialProgress, reloadProgress]);
 
   return (
     <div className="helix-page">
