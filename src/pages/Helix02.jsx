@@ -162,6 +162,9 @@ export default function Helix02() {
                       padding: "4px 8px",
                       borderRadius: 999,
                       fontSize: 12,
+                      fontSize: window.innerWidth < 640 ? "8px" : "15px",
+                      padding: window.innerWidth < 640 ? "4px 8px" : "8px 18px",
+
                       fontWeight: 800,
                       color: "#fff",
                       background: done ? "linear-gradient(90deg,#16a34a,#22c55e)" : "rgba(255,255,255,.18)",
