@@ -124,119 +124,166 @@ export default function MediaModal({
   // ================= VIDEO (HLS + DB progress) =================
   useEffect(() => {
     if (!open || type !== "video") return;
-    const el = videoRef.current;
-    if (!el) return;
-
+    const video = videoRef.current;
+    if (!video) return;
+  
     const isHls = typeof url === "string" && url.includes(".m3u8");
-    const didSeekRef = useRef(false);
-
-    const cleanup = () => {
-      if (hlsRef.current) { try { hlsRef.current.destroy(); } catch {} hlsRef.current = null; }
-      el.removeEventListener("loadedmetadata", onLoadedMeta);
-      el.removeEventListener("canplay", onCanPlay);
-      el.removeEventListener("timeupdate", onTime);
-      el.removeEventListener("pause", onPause);
-      el.removeEventListener("ended", onEnded);
-      window.removeEventListener("beforeunload", onBeforeUnload);
-    };
-
-    const safeSeek = () => {
-      if (didSeekRef.current) return;
-      if (typeof startAt === "number" && startAt > 0 && el.readyState >= 1) {
-        try { el.currentTime = startAt; didSeekRef.current = true; } catch {}
+  
+    // --- helpers ---
+    const jumpToStart = () => {
+      if (startAt && video.readyState >= 1) {
+        try { video.currentTime = startAt; } catch {}
+      } else {
+        const once = () => { try { video.currentTime = startAt || 0; } catch {} video.removeEventListener("loadedmetadata", once); };
+        video.addEventListener("loadedmetadata", once);
       }
     };
-
-    const onLoadedMeta = () => {
-      setDuration(el.duration || 0);
-      safeSeek();
-      // اولین ذخیره، تا صفحه‌های Helix بلافاصله بفهمند
+  
+    const saveSnap = () => {
+      const t = video.currentTime || 0;
+      const d = video.duration || duration || 0;
       saveProgress({
-        username, courseCode, sessionId,
+        username: user?.username, courseCode, sessionId,
+        lastPosition: t,
+        watchedSeconds: Math.max(maxSeen, t),
+        totalSeconds: d,
+        completed: false,
+      });
+    };
+  
+    const onLoadedMeta = () => {
+      const d = video.duration || 0;
+      setDuration(d);
+      jumpToStart();
+      // اولین اسنپ برای ساخت رکورد
+      saveProgress({
+        username: user?.username, courseCode, sessionId,
         lastPosition: startAt || 0,
         watchedSeconds: startAt || 0,
-        totalSeconds: el.duration || 0,
+        totalSeconds: d,
         completed: false,
-      }).finally(notifyProgress);
-      el.play().catch(() => {});
+      });
+      video.play().catch(() => {});
     };
-    const onCanPlay = () => safeSeek();
-
+  
     const onTime = () => {
-      const t = el.currentTime || 0;
-      const d = el.duration || duration || 0;
-      setMaxSeen(p => Math.max(p, t));
+      const t = video.currentTime || 0;
+      const d = video.duration || duration || 0;
+      setMaxSeen((prev) => Math.max(prev, t));
       if (shouldSend(performance.now())) {
         saveProgress({
-          username, courseCode, sessionId,
+          username: user?.username, courseCode, sessionId,
           lastPosition: t,
           watchedSeconds: Math.max(maxSeen, t),
           totalSeconds: d,
           completed: false,
-        }).finally(notifyProgress);
+        });
       }
     };
-    const onPause = () => {
-      const t = el.currentTime || 0;
-      const d = el.duration || duration || 0;
-      saveProgress({
-        username, courseCode, sessionId,
-        lastPosition: t,
-        watchedSeconds: Math.max(maxSeen, t),
-        totalSeconds: d,
-        completed: false,
-      }).finally(notifyProgress);
-    };
+  
+    const onPause = () => saveSnap();
+  
     const onEnded = () => {
-      const d = el.duration || duration || 0;
+      const d = video.duration || duration || 0;
       saveProgress({
-        username, courseCode, sessionId,
+        username: user?.username, courseCode, sessionId,
         lastPosition: d,
         watchedSeconds: d,
         totalSeconds: d,
         completed: true,
-      }).finally(notifyProgress);
+      });
     };
-    const onBeforeUnload = () => {
-      const t = el.currentTime || 0;
-      const d = el.duration || duration || 0;
-      saveProgress({
-        username, courseCode, sessionId,
-        lastPosition: t,
-        watchedSeconds: Math.max(maxSeen, t),
-        totalSeconds: d,
-        completed: false,
-      }).finally(notifyProgress);
-    };
-
-    el.addEventListener("loadedmetadata", onLoadedMeta);
-    el.addEventListener("canplay", onCanPlay);
-    el.addEventListener("timeupdate", onTime);
-    el.addEventListener("pause", onPause);
-    el.addEventListener("ended", onEnded);
+  
+    const onBeforeUnload = () => saveSnap();
+  
+    // --- attach listeners ---
+    video.addEventListener("loadedmetadata", onLoadedMeta);
+    video.addEventListener("timeupdate", onTime);
+    video.addEventListener("pause", onPause);
+    video.addEventListener("ended", onEnded);
     window.addEventListener("beforeunload", onBeforeUnload);
-
+  
+    // قبل از هر لود، سورس قبلی را کاملاً پاک کن
+    try { video.pause(); } catch {}
+    try { video.removeAttribute("src"); } catch {}
+    try { video.load(); } catch {}
+  
+    // --- HLS load with robust error handling ---
     if (isHls) {
       if (Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 60 });
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          backBufferLength: 60,
+          // تنظیمات محافظه‌کارانه برای دستگاه‌های قدیمی
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60,
+          fragLoadingTimeOut: 20000,
+          manifestLoadingTimeOut: 20000,
+        });
         hlsRef.current = hls;
-        hls.attachMedia(el);
+        hls.attachMedia(video);
         hls.loadSource(url);
-        // وقتی Manifest آماده شد، می‌توان Seek کرد
-        hls.on(Hls.Events.MANIFEST_PARSED, () => { safeSeek(); });
-      } else if (el.canPlayType("application/vnd.apple.mpegurl")) {
-        el.src = url;
+  
+        // اگر مانیفست پارس شد و متادیتا آماده بود
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (video.readyState >= 1) onLoadedMeta();
+        });
+  
+        // هندل و ریکاوری خطاها
+        hls.on(Hls.Events.ERROR, (_evt, data) => {
+          if (!data?.fatal) return;
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              // تلاش مجدد شبکه
+              try { hls.startLoad(); } catch {}
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              // ریکاوری مدیا
+              try { hls.recoverMediaError(); } catch {}
+              break;
+            default:
+              // ریلود کامل منبع به‌صورت امن
+              try {
+                hls.destroy();
+              } catch {}
+              hlsRef.current = null;
+              const nhls = new Hls({ enableWorker: true, lowLatencyMode: true });
+              hlsRef.current = nhls;
+              nhls.attachMedia(video);
+              nhls.loadSource(url);
+              break;
+          }
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Safari (native HLS)
+        video.src = url;
       } else {
-        console.warn("HLS not supported for video.");
-        el.src = "";
+        console.warn("HLS not supported on this device.");
+        // fallback: چیزی ست نکنیم تا کرش نشه
       }
     } else {
-      el.src = url;
+      // فایل MP4 معمولی
+      video.src = url;
     }
-
-    return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type, url, sessionId, courseCode, startAt, username]);
+  
+    return () => {
+      try { video.pause(); } catch {}
+      video.removeEventListener("loadedmetadata", onLoadedMeta);
+      video.removeEventListener("timeupdate", onTime);
+      video.removeEventListener("pause", onPause);
+      video.removeEventListener("ended", onEnded);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      if (hlsRef.current) {
+        try { hlsRef.current.destroy(); } catch {}
+        hlsRef.current = null;
+      }
+      try { video.removeAttribute("src"); } catch {}
+      try { video.load(); } catch {}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, type, url, sessionId, courseCode, startAt, user?.username]);
+  
 
   // ================= AUDIO (HLS + LOCAL resume ONLY) =================
   useEffect(() => {
@@ -371,7 +418,6 @@ export default function MediaModal({
               controlsList="nodownload noremoteplayback"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
-              crossOrigin="anonymous"
               style={S.video}
             />
 
