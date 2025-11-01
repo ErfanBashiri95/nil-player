@@ -20,37 +20,12 @@ export default function Helix01() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // --- NEW: گرفتن username حتی وقتی AuthContext هنوز sync نشده
-  const getUname = useCallback(async () => {
-    if (user?.username) return user.username;
-    const { data } = await supabase.auth.getSession();
-    const s = data?.session?.user;
-    if (!s) return null;
-    const m = s.user_metadata || {};
-    return m.username || m.user_name || s.email || null;
-  }, [user?.username]);
-
-  const openMedia = async (type, url, title, sessionId) => {
-    let initialTime = 0;
-    if (type === "video") {
-      const p = progressMap[sessionId];
-      if (p?.last_position > 0) {
-        initialTime = Number(p.last_position);
-      } else {
-        const uname = await getUname();
-        if (uname) {
-          const { data } = await getProgress(uname, sessionId);
-          initialTime = Number(data?.last_position || 0);
-        }
-      }
-    }
-    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
-  };
-
-  // فقط با username + course_code می‌گیریم (دیگه منتظر sessions نیستیم)
-  const reloadProgress = useCallback(async (unameOverride) => {
-    const uname = unameOverride || (await getUname());
+  // ---- warmReload: هر جا لازم شد، همین را صدا می‌زنیم تا بدون ریفرش دستی پروگرس بیاید
+  const lastUsernameRef = useRef(null);
+  const warmReload = useCallback(async (forcedUsername) => {
+    const uname = forcedUsername ?? user?.username ?? lastUsernameRef.current;
     if (!uname) return;
+    lastUsernameRef.current = uname;
 
     const { data, error } = await supabase
       .from("nilplayer_progress")
@@ -58,7 +33,10 @@ export default function Helix01() {
       .eq("username", uname)
       .eq("course_code", "HELIX01");
 
-    if (error) { console.error("fetch progress error:", error); return; }
+    if (error) {
+      console.error("fetch progress error:", error);
+      return;
+    }
 
     const map = {};
     for (const r of data || []) {
@@ -72,56 +50,56 @@ export default function Helix01() {
       };
     }
     setProgressMap(map);
-  }, [getUname]);
+  }, [user?.username]);
 
-  // --- NEW: warm-up بعد از لاگین (retry کوتاه برای race)
-  const warmReloadRef = useRef(null);
-  const warmReload = useCallback(async (unameMaybe) => {
-    const uname = unameMaybe || (await getUname());
-    if (!uname) return;
-    // سه بار با فاصله‌های کوتاه
-    reloadProgress(uname);
-    clearTimeout(warmReloadRef.current);
-    warmReloadRef.current = setTimeout(() => reloadProgress(uname), 250);
-    setTimeout(() => reloadProgress(uname), 1000);
-  }, [getUname, reloadProgress]);
+  const openMedia = async (type, url, title, sessionId) => {
+    let initialTime = 0;
+    if (type === "video") {
+      const p = progressMap[sessionId];
+      if (p?.last_position > 0) {
+        initialTime = Number(p.last_position);
+      } else if (user?.username) {
+        const { data } = await getProgress(user.username, sessionId);
+        initialTime = Number(data?.last_position || 0);
+      }
+    }
+    setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
+  };
 
-  // همگام‌سازی روی تغییر وضعیت احراز هویت و فوکِس/ویزیبیلیتی
+  // ---- اتصالات اتھنتیکیشن و فوکِس/ویزیبیلیتی
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange(async (evt, session) => {
-      if (evt === "SIGNED_IN" || evt === "TOKEN_REFRESHED" || evt === "INITIAL_SESSION") {
-        const m = session?.user?.user_metadata || {};
-        const uname = m.username || m.user_name || session?.user?.email || null;
-        warmReload(uname);
+      const name = typeof evt === "string" ? evt : evt?.event;
+      if (name === "SIGNED_IN" || name === "INITIAL_SESSION" || name === "TOKEN_REFRESHED") {
+        const u = session?.user;
+        const m = u?.user_metadata || {};
+        const uname = m.username || m.user_name || u?.email || user?.username || null;
+        await warmReload(uname);
       }
-      if (evt === "SIGNED_OUT") {
+      if (name === "SIGNED_OUT") {
         setProgressMap({});
       }
     });
 
     const onFocus = () => warmReload();
     const onVisible = () => { if (document.visibilityState === "visible") warmReload(); };
-    const onPageShow = (e) => { if (e.persisted) warmReload(); }; // برگشت از bfcache
-    const onProgressEvent = () => reloadProgress();
+    const onProgressEvent = () => warmReload();
 
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("pageshow", onPageShow);
     window.addEventListener("nilplayer:progress-updated", onProgressEvent);
 
     return () => {
       sub?.data?.subscription?.unsubscribe?.();
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("pageshow", onPageShow);
       window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-      clearTimeout(warmReloadRef.current);
     };
-  }, [warmReload, reloadProgress]);
+  }, [warmReload]);
 
   const closeModal = () => {
     setModal(null);
-    reloadProgress();
+    warmReload();
   };
 
   // ESC
@@ -148,18 +126,24 @@ export default function Helix01() {
           videoUrl: s.video_url, audioUrl: s.audio_url,
         })));
       }
-      setTimeout(() => setReady(true), 100);
+      setTimeout(() => setReady(true), 60);
     })();
   }, []);
 
-  // ورود اولیهٔ صفحه
+  // با تغییر یوزر فوراً بگیر
   useEffect(() => { warmReload(); }, [warmReload]);
+
+  // وقتی UI آماده شد، یک warmReload بزن (راه‌حل ریفرش خودکار بی‌دردسر)
+  useEffect(() => {
+    if (ready) warmReload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
 
   // پولینگ ملایم
   useEffect(() => {
-    const id = setInterval(() => reloadProgress(), 10000);
+    const id = setInterval(() => warmReload(), 10000);
     return () => clearInterval(id);
-  }, [reloadProgress]);
+  }, [warmReload]);
 
   return (
     <div className="helix-page">
