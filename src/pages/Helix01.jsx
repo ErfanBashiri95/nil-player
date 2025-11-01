@@ -12,6 +12,21 @@ import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
 import { getProgress } from "../utils/progress";
 
+/** username را مستقل از Context از سشن می‌خوانیم (برای رِیس بعد از لاگین دوباره) */
+async function getUsernameFromSession() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const u = session?.user;
+    return (
+      u?.user_metadata?.username ||
+      u?.email ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
 export default function Helix01() {
   const { user } = useAuth();
 
@@ -26,21 +41,25 @@ export default function Helix01() {
       const p = progressMap[sessionId];
       if (p?.last_position > 0) {
         initialTime = Number(p.last_position);
-      } else if (user?.username) {
-        const { data } = await getProgress(user.username, sessionId);
-        initialTime = Number(data?.last_position || 0);
+      } else {
+        const name = user?.username || (await getUsernameFromSession());
+        if (name) {
+          const { data } = await getProgress(name, sessionId);
+          initialTime = Number(data?.last_position || 0);
+        }
       }
     }
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // فقط با username + course_code می‌گیریم (دیگه منتظر sessions نیستیم)
+  /** ریلود مستقل از Context (اولویت: Context، فالبک: Session) */
   const reloadProgress = useCallback(async () => {
-    if (!user?.username) return;
+    const name = user?.username || (await getUsernameFromSession());
+    if (!name) return;
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", user.username)
+      .eq("username", name)
       .eq("course_code", "HELIX01");
 
     if (error) { console.error("fetch progress error:", error); return; }
@@ -59,10 +78,14 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // همگام‌سازی روی تغییر وضعیت احراز هویت و فوکِس/ویزیبیلیتی
+  // همگام‌سازی روی تغییر auth + فوکِس/ویزیبیلیتی + رویداد داخلی
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") reloadProgress();
+      if (evt.event === "SIGNED_IN") {
+        // یک‌بار فوری + یک‌بار با تأخیر کوتاه (برای ریس ست شدن کانتکست/توکن)
+        reloadProgress();
+        setTimeout(reloadProgress, 400);
+      }
     });
 
     const onFocus = () => reloadProgress();
@@ -114,7 +137,7 @@ export default function Helix01() {
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
+  // بار اول و هر بار تغییر یوزر
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
 
   // پولینگ ملایم
@@ -185,7 +208,7 @@ export default function Helix01() {
       {modal && (
         <MediaModal
           open={!!modal}
-          onClose={closeModal}
+          onClose={() => { setModal(null); reloadProgress(); }}
           type={modal.type}
           url={modal.url}
           title={modal.title}

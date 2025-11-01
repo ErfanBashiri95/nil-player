@@ -12,6 +12,20 @@ import { preloadImage } from "../utils/preload";
 import { STR } from "../i18n/lang";
 import { getProgress } from "../utils/progress";
 
+async function getUsernameFromSession() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const u = session?.user;
+    return (
+      u?.user_metadata?.username ||
+      u?.email ||
+      null
+    );
+  } catch {
+    return null;
+  }
+}
+
 export default function Helix02() {
   const { user } = useAuth();
 
@@ -26,21 +40,24 @@ export default function Helix02() {
       const p = progressMap[sessionId];
       if (p?.last_position > 0) {
         initialTime = Number(p.last_position);
-      } else if (user?.username) {
-        const { data } = await getProgress(user.username, sessionId);
-        initialTime = Number(data?.last_position || 0);
+      } else {
+        const name = user?.username || (await getUsernameFromSession());
+        if (name) {
+          const { data } = await getProgress(name, sessionId);
+          initialTime = Number(data?.last_position || 0);
+        }
       }
     }
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
   };
 
-  // فقط با username + course_code می‌گیریم (وابسته به sessions نیست)
   const reloadProgress = useCallback(async () => {
-    if (!user?.username) return;
+    const name = user?.username || (await getUsernameFromSession());
+    if (!name) return;
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
-      .eq("username", user.username)
+      .eq("username", name)
       .eq("course_code", "HELIX02");
 
     if (error) { console.error("fetch progress error:", error); return; }
@@ -59,10 +76,12 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // همگام‌سازی روی تغییر auth و فوکِس/ویزیبیلیتی
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") reloadProgress();
+      if (evt.event === "SIGNED_IN") {
+        reloadProgress();
+        setTimeout(reloadProgress, 400);
+      }
     });
 
     const onFocus = () => reloadProgress();
@@ -121,10 +140,8 @@ export default function Helix02() {
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
 
-  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
