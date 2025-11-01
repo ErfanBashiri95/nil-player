@@ -64,56 +64,51 @@ export default function Helix01() {
         console.error("fetch sessions error:", error);
       }
 
+      // یک مکث خیلی کوتاه برای جاافتادن فونت/استایل
       setTimeout(() => setReady(true), 100);
     })();
   }, []);
 
-  // خواندن پیشرفت کاربر برای همین دوره و ساخت map
+  // --- ADD: یک تابع واحد برای خواندن پرگرس ---
+  async function fetchProgress(currentUser = user, currentSessions = sessions) {
+    if (!currentUser || !currentSessions?.length) return;
+    const ids = currentSessions.map((s) => s.id);
+    const { data, error } = await supabase
+      .from("nilplayer_progress")
+      .select("session_id, watched_seconds, total_seconds, completed, last_position")
+      .eq("username", currentUser.username)
+      .in("session_id", ids);
+
+    if (error) {
+      console.error("fetch progress error:", error);
+      return;
+    }
+
+    const map = {};
+    for (const r of data || []) {
+      const total = Number(r.total_seconds || 0);
+      const base = Number(r.watched_seconds || r.last_position || 0);
+      const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
+      map[r.session_id] = {
+        percent,
+        last_position: Number(r.last_position || 0),
+        completed: !!r.completed,
+      };
+    }
+    setProgressMap(map);
+  }
+
+  // خواندن پیشرفت کاربر برای همین دوره و ساخت map (فراخوانی اولیه)
   useEffect(() => {
-    if (!user || sessions.length === 0) return;
-    (async () => {
-      const ids = sessions.map((s) => s.id);
-      const { data, error } = await supabase
-        .from("nilplayer_progress")
-        .select("session_id, watched_seconds, total_seconds, completed, last_position")
-        .eq("username", user.username)
-        .in("session_id", ids);
-
-      if (error) {
-        console.error("fetch progress error:", error);
-        return;
-      }
-
-      const map = {};
-      for (const r of data || []) {
-        const total = Number(r.total_seconds || 0);
-        const base = Number(r.watched_seconds || r.last_position || 0);
-        const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
-        map[r.session_id] = {
-          percent,
-          last_position: Number(r.last_position || 0),
-          completed: !!r.completed,
-        };
-      }
-      setProgressMap(map);
-    })();
+    fetchProgress(user, sessions);
   }, [user, sessions]);
 
-  // آیکن ویدئو (SVG کوچک)
-  const IconVideo = () => (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      style={{ marginInlineStart: 6 }}
-    >
-      <path
-        fill="currentColor"
-        d="M15 8v8H5a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h10zm2 .5l4-2.25v10.5L17 14.5z"
-      />
-    </svg>
-  );
+  // --- ADD: رفرش فوری بدون رفرش صفحه (گوش‌دادن به رویداد)
+  useEffect(() => {
+    const onUpd = () => fetchProgress(user, sessions);
+    window.addEventListener("nilplayer:progress-updated", onUpd);
+    return () => window.removeEventListener("nilplayer:progress-updated", onUpd);
+  }, [user, sessions]);
 
   return (
     <div className="helix-page">
@@ -121,23 +116,8 @@ export default function Helix01() {
       <HeaderBar />
 
       <div className="helix-bg" />
-
-      {/* ⭐️ ستاره‌ها فقط در نیمه بالایی با ماسک */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          WebkitMaskImage:
-            "linear-gradient(to bottom, #000 0%, #000 50%, transparent 50%, transparent 100%)",
-          maskImage:
-            "linear-gradient(to bottom, #000 0%, #000 50%, transparent 50%, transparent 100%)",
-          zIndex: 1,
-        }}
-      >
-        <StarOverlay />
-      </div>
-
+      {/* اگر قبلاً محدود کرده‌ای به نیمهٔ بالا، همین StarOverlay را داخل یک ظرف 50vh بگذار */}
+      <StarOverlay />
       <div className="helix-aurora" />
       <div className="helix-shade" />
 
@@ -183,13 +163,14 @@ export default function Helix01() {
                   <h3 className="session-title">{s.title}</h3>
                   <p className="session-desc">{s.desc}</p>
 
-                  {/* فقط دکمهٔ ویدئو – تک‌ستونه */}
+                  {/* فقط ویدئو - دکمه پادکست حذف شده */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
                     <button
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
                     >
-                      {STR("video")} <IconVideo />
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
+                      {STR("video")}
                     </button>
                   </div>
                 </article>

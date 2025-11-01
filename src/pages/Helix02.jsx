@@ -36,7 +36,9 @@ export default function Helix02() {
   // خواندن جلسات + پیش‌لود بک‌گراند + آماده‌سازی صفحه
   useEffect(() => {
     (async () => {
-      await Promise.allSettled([preloadImage("/assets/helix02_bg.png")]);
+      await Promise.allSettled([
+        preloadImage("/assets/helix02_bg.png"), // اگر نبود، خطا بی‌اثر می‌شود
+      ]);
 
       const { data, error } = await supabase
         .from("nilplayer_sessions")
@@ -62,35 +64,45 @@ export default function Helix02() {
     })();
   }, []);
 
-  // خواندن پیشرفت کاربر و ساخت map
+  // --- ADD: یک تابع واحد برای خواندن پرگرس ---
+  async function fetchProgress(currentUser = user, currentSessions = sessions) {
+    if (!currentUser || !currentSessions?.length) return;
+    const ids = currentSessions.map((s) => s.id);
+    const { data, error } = await supabase
+      .from("nilplayer_progress")
+      .select("session_id, watched_seconds, total_seconds, completed, last_position")
+      .eq("username", currentUser.username)
+      .in("session_id", ids);
+
+    if (error) {
+      console.error("fetch progress error:", error);
+      return;
+    }
+
+    const map = {};
+    for (const r of data || []) {
+      const total = Number(r.total_seconds || 0);
+      const base = Number(r.watched_seconds || r.last_position || 0);
+      const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
+      map[r.session_id] = {
+        percent,
+        last_position: Number(r.last_position || 0),
+        completed: !!r.completed,
+      };
+    }
+    setProgressMap(map);
+  }
+
+  // خواندن پیشرفت کاربر و ساخت map (فراخوانی اولیه)
   useEffect(() => {
-    if (!user || sessions.length === 0) return;
-    (async () => {
-      const ids = sessions.map((s) => s.id);
-      const { data, error } = await supabase
-        .from("nilplayer_progress")
-        .select("session_id, watched_seconds, total_seconds, completed, last_position")
-        .eq("username", user.username)
-        .in("session_id", ids);
+    fetchProgress(user, sessions);
+  }, [user, sessions]);
 
-      if (error) {
-        console.error("fetch progress error:", error);
-        return;
-      }
-
-      const map = {};
-      for (const r of data || []) {
-        const total = Number(r.total_seconds || 0);
-        const base = Number(r.watched_seconds || r.last_position || 0);
-        const percent = total > 0 ? Math.min(100, Math.round((base / total) * 100)) : 0;
-        map[r.session_id] = {
-          percent,
-          last_position: Number(r.last_position || 0),
-          completed: !!r.completed,
-        };
-      }
-      setProgressMap(map);
-    })();
+  // --- ADD: رفرش فوری بدون رفرش صفحه (گوش‌دادن به رویداد)
+  useEffect(() => {
+    const onUpd = () => fetchProgress(user, sessions);
+    window.addEventListener("nilplayer:progress-updated", onUpd);
+    return () => window.removeEventListener("nilplayer:progress-updated", onUpd);
   }, [user, sessions]);
 
   return (
@@ -109,7 +121,7 @@ export default function Helix02() {
           right: 0,
           height: "50vh",
           overflow: "hidden",
-          zIndex: 1,
+          zIndex: 1, // بالاتر از بک‌گراند، پایین‌تر از شید و کانتنت
           pointerEvents: "none",
         }}
       >
@@ -131,7 +143,6 @@ export default function Helix02() {
               const p = progressMap[s.id];
               const percent = p?.percent ?? 0;
               const done = !!p?.completed || percent === 100;
-              const isMobile = window.innerWidth < 768;
 
               return (
                 <article className="session-card" key={s.id} style={{ position: "relative" }}>
@@ -163,53 +174,19 @@ export default function Helix02() {
                   <h3 className="session-title">{s.title}</h3>
                   <p className="session-desc">{s.desc}</p>
 
-                  {/* ✅ دکمه‌ها با فونت متفاوت در موبایل/دسکتاپ */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <button
                       className="btn btn-primary"
                       onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 4,
-                        fontSize: isMobile ? 8 : 18,
-                      }}
                     >
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          fontSize: isMobile ? 8 : 16,
-                          lineHeight: 1,
-                          marginLeft: 4,
-                        }}
-                      >
-                        🎬
-                      </span>
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
                       {STR("video")}
                     </button>
-
                     <button
                       className="btn btn-ghost"
                       onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 4,
-                        fontSize: isMobile ? 0.5 : 18,
-                      }}
                     >
-                      <span
-                        aria-hidden="true"
-                        style={{
-                          fontSize: isMobile ? 4 : 16,
-                          lineHeight: 1,
-                          marginLeft: 4,
-                        }}
-                      >
-                        🎧
-                      </span>
+                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎧</span>
                       {STR("podcast")}
                     </button>
                   </div>
