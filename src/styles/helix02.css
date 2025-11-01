@@ -13,7 +13,7 @@
 .helix-bg {
   position: fixed;
   inset: 0;
-  background: url("/assets/helix02_bg.png") center/cover no-repeat;
+  background: url("/assets/helix01_bg.png") center/cover no-repeat;
   z-index: -2;
 }
 
