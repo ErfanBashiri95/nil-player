@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import "../styles/helix02.css";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
@@ -19,19 +19,7 @@ export default function Helix02() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
-
-  // --- ریفرش خودکار یک‌بار بعد از حاضر شدن کاربر ---
-  useEffect(() => {
-    if (!user?.username) return;
-    const key = `nil_auto_refresh_once::${user.username}::${window.location.pathname}`;
-    try {
-      const already = sessionStorage.getItem(key);
-      if (!already) {
-        sessionStorage.setItem(key, "1");
-        window.location.reload();
-      }
-    } catch {}
-  }, [user?.username]);
+  const didAutoKickRef = useRef(false);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -47,7 +35,6 @@ export default function Helix02() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
   };
 
-  // فقط با username + course_code می‌گیریم (وابسته به sessions نیست)
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
@@ -72,39 +59,10 @@ export default function Helix02() {
     setProgressMap(map);
   }, [user?.username]);
 
-  // همگام‌سازی روی تغییر auth و فوکِس/ویزیبیلیتی
-  useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") reloadProgress();
-    });
-
-    const onFocus = () => reloadProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
-    const onProgressEvent = () => reloadProgress();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      sub?.data?.subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
-  }, [reloadProgress]);
-
   const closeModal = () => {
     setModal(null);
     reloadProgress();
   };
-
-  // ESC
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && closeModal();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [closeModal]);
 
   // جلسات + بک‌گراند
   useEffect(() => {
@@ -126,22 +84,42 @@ export default function Helix02() {
             audioUrl: s.audio_url,
           }))
         );
-      } else {
-        console.error("fetch sessions error:", error);
       }
-
-      setTimeout(() => setReady(true), 100);
+      setTimeout(() => setReady(true), 50);
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
-  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+  // روی تغییر user فوراً بگیر
+  useEffect(() => {
+    if (user?.username) reloadProgress();
+    else setProgressMap({});
+  }, [user?.username, reloadProgress]);
 
-  // پولینگ ملایم
+  // لیسنر ایونت‌های داخلی AuthContext
+  useEffect(() => {
+    const onUserChanged = () => reloadProgress();
+    const onLoggedOut = () => setProgressMap({});
+    window.addEventListener("nil:user-changed", onUserChanged);
+    window.addEventListener("nil:user-logged-out", onLoggedOut);
+    return () => {
+      window.removeEventListener("nil:user-changed", onUserChanged);
+      window.removeEventListener("nil:user-logged-out", onLoggedOut);
+    };
+  }, [reloadProgress]);
+
+  // پولینگ
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
+
+  // one-shot بعد از آماده‌شدن
+  useEffect(() => {
+    if (!didAutoKickRef.current && ready && user?.username) {
+      didAutoKickRef.current = true;
+      setTimeout(() => { reloadProgress(); }, 0);
+    }
+  }, [ready, user?.username, reloadProgress]);
 
   return (
     <div className="helix-page">

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import StarOverlay from "../components/StarOverlay";
 import MediaModal from "../components/MediaModal";
 import "../styles/helix01.css";
@@ -20,18 +20,8 @@ export default function Helix01() {
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
 
-  // --- ریفرش خودکار یک‌بار بعد از حاضر شدن کاربر ---
-  useEffect(() => {
-    if (!user?.username) return;
-    const key = `nil_auto_refresh_once::${user.username}::${window.location.pathname}`;
-    try {
-      const already = sessionStorage.getItem(key);
-      if (!already) {
-        sessionStorage.setItem(key, "1");
-        window.location.reload();
-      }
-    } catch {}
-  }, [user?.username]);
+  // جلوگیری از دوبار رفرش ناخواسته
+  const didAutoKickRef = useRef(false);
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -47,7 +37,7 @@ export default function Helix01() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX01" });
   };
 
-  // فقط با username + course_code می‌گیریم (دیگه منتظر sessions نیستیم)
+  // فقط با username + course_code می‌گیریم
   const reloadProgress = useCallback(async () => {
     if (!user?.username) return;
     const { data, error } = await supabase
@@ -71,28 +61,6 @@ export default function Helix01() {
     }
     setProgressMap(map);
   }, [user?.username]);
-
-  // همگام‌سازی روی تغییر وضعیت احراز هویت و فوکِس/ویزیبیلیتی
-  useEffect(() => {
-    const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_IN") reloadProgress();
-    });
-
-    const onFocus = () => reloadProgress();
-    const onVisible = () => { if (document.visibilityState === "visible") reloadProgress(); };
-    const onProgressEvent = () => reloadProgress();
-
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("nilplayer:progress-updated", onProgressEvent);
-
-    return () => {
-      sub?.data?.subscription?.unsubscribe?.();
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("nilplayer:progress-updated", onProgressEvent);
-    };
-  }, [reloadProgress]);
 
   const closeModal = () => {
     setModal(null);
@@ -123,18 +91,42 @@ export default function Helix01() {
           videoUrl: s.video_url, audioUrl: s.audio_url,
         })));
       }
-      setTimeout(() => setReady(true), 100);
+      setTimeout(() => setReady(true), 50);
     })();
   }, []);
 
-  // با تغییر یوزر فوراً بگیر
-  useEffect(() => { reloadProgress(); }, [reloadProgress]);
+  // ❗️روی تغییر user فوراً بگیریم (بدون اتکا به Supabase Auth)
+  useEffect(() => {
+    if (user?.username) reloadProgress();
+    else setProgressMap({});
+  }, [user?.username, reloadProgress]);
+
+  // لیسنر ایونت‌های داخلی AuthContext
+  useEffect(() => {
+    const onUserChanged = () => reloadProgress();
+    const onLoggedOut = () => setProgressMap({});
+    window.addEventListener("nil:user-changed", onUserChanged);
+    window.addEventListener("nil:user-logged-out", onLoggedOut);
+    return () => {
+      window.removeEventListener("nil:user-changed", onUserChanged);
+      window.removeEventListener("nil:user-logged-out", onLoggedOut);
+    };
+  }, [reloadProgress]);
 
   // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
+
+  // ⚙️ One-shot refresh بعد از اولین آماده شدن صفحه + حضور user
+  useEffect(() => {
+    if (!didAutoKickRef.current && ready && user?.username) {
+      didAutoKickRef.current = true;
+      // کمی تاخیر تا DOM/Context کامل پایدار شود
+      setTimeout(() => { reloadProgress(); }, 0);
+    }
+  }, [ready, user?.username, reloadProgress]);
 
   return (
     <div className="helix-page">
