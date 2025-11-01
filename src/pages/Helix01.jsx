@@ -59,6 +59,27 @@ export default function Helix01() {
     setProgressMap(map);
   }, [user, sessions]);
 
+  // ⬅️ ریفرش خودکار یک‌بار (هم‌ارز ریفرش دستی)
+  useEffect(() => {
+    if (!user) return;
+    const key = `${window.location.pathname}::nilplayer_autoreload_once`;
+    const did = sessionStorage.getItem(key);
+    if (!did) {
+      sessionStorage.setItem(key, "1");
+      setTimeout(() => window.location.reload(), 50);
+    }
+  }, [user]);
+
+  // بعد از ready=true، چند بار رفرش پرگرس برای همگام‌سازی فوری
+  useEffect(() => {
+    if (ready) {
+      reloadProgress();
+      const t1 = setTimeout(reloadProgress, 250);
+      const t2 = setTimeout(reloadProgress, 1200);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }
+  }, [ready, reloadProgress]);
+
   // auto refresh hooks
   useEffect(() => {
     const unsub = supabase.auth.onAuthStateChange((evt) => {
