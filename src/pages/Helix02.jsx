@@ -19,7 +19,6 @@ export default function Helix02() {
   const [sessions, setSessions] = useState([]);
   const [progressMap, setProgressMap] = useState({});
   const [ready, setReady] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0); // Remount
 
   const openMedia = async (type, url, title, sessionId) => {
     let initialTime = 0;
@@ -35,14 +34,14 @@ export default function Helix02() {
     setModal({ type, url, title, sessionId, initialTime, courseCode: "HELIX02" });
   };
 
+  // فقط با username + course_code می‌گیریم (وابسته به sessions نیست)
   const reloadProgress = useCallback(async () => {
-    if (!user || sessions.length === 0) return;
-    const ids = sessions.map((s) => s.id);
+    if (!user?.username) return;
     const { data, error } = await supabase
       .from("nilplayer_progress")
       .select("session_id, watched_seconds, total_seconds, completed, last_position")
       .eq("username", user.username)
-      .in("session_id", ids);
+      .eq("course_code", "HELIX02");
 
     if (error) { console.error("fetch progress error:", error); return; }
 
@@ -58,21 +57,12 @@ export default function Helix02() {
       };
     }
     setProgressMap(map);
-  }, [user, sessions]);
+  }, [user?.username]);
 
-  // 🚩 Auth hooks: ریمونت + رفرش خودکار روی هر SIGNED_IN/SIGNED_OUT
+  // همگام‌سازی روی تغییر auth و فوکِس/ویزیبیلیتی
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange((evt) => {
-      if (evt.event === "SIGNED_OUT") {
-        setRefreshKey((k) => k + 1);
-      }
-      if (evt.event === "SIGNED_IN") {
-        setRefreshKey((k) => k + 1);
-        reloadProgress();
-        setTimeout(() => {
-          try { window.location.replace(window.location.href); } catch {}
-        }, 120);
-      }
+      if (evt.event === "SIGNED_IN") reloadProgress();
     });
 
     const onFocus = () => reloadProgress();
@@ -131,14 +121,17 @@ export default function Helix02() {
     })();
   }, []);
 
+  // با تغییر یوزر فوراً بگیر
   useEffect(() => { reloadProgress(); }, [reloadProgress]);
+
+  // پولینگ ملایم
   useEffect(() => {
     const id = setInterval(() => reloadProgress(), 10000);
     return () => clearInterval(id);
   }, [reloadProgress]);
 
   return (
-    <div className="helix-page" key={`${user?.username || "anon"}-${refreshKey}`}>
+    <div className="helix-page">
       <HeaderBar />
       <div className="helix-bg" />
 
