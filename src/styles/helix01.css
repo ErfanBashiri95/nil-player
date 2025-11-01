@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Vazir:wght@400;700;800&family=Inter:wght@400;600;700&display=swap");
-
 :root {
   --fg: #ffffff;
   --fg-dim: rgba(255,255,255,.78);
@@ -17,7 +15,6 @@
   overflow: hidden;
   color: var(--fg);
   direction: rtl;
-  font-family: "Vazir", "Inter", system-ui, sans-serif;
 }
 
 /* بک‌گراند */
@@ -124,7 +121,6 @@
   padding: 14px;
   display: grid;
   gap: 10px;
-  font-family: "Vazir", "Inter", sans-serif;
 }
 
 .session-title {
@@ -149,31 +145,30 @@
   padding: 8px 14px;
   font-size: 14px;
   font-weight: 700;
-  font-family: "Vazir", "Inter", sans-serif;
   cursor: pointer;
   transition: all 0.25s ease;
   border: none;
 }
 
-/* حذف سایه سیاه دور */
+/* دکمه اصلی */
 .btn-primary {
   background: linear-gradient(90deg, var(--accent), var(--accent-2));
   color: #fff;
-  box-shadow: none !important;
-  border: 1px solid transparent !important;
+  box-shadow: none;
+  border: 1px solid transparent;
 }
 
 .btn-ghost {
   background: rgba(255,255,255,.08);
   border: 1px solid rgba(255,255,255,.2);
   color: #fff;
-  box-shadow: none !important;
+  box-shadow: none;
 }
 
-/* موبایل */
+/* نسخه موبایل */
 @media (max-width: 640px) {
   .helix-hero {
-    top: 13svh !important; /* تیتر بالاتر آمد */
+    top: 13svh !important; /* تیتر بالاتر */
     left: 5vw !important;
     right: 5vw !important;
   }
@@ -191,31 +186,4 @@
     font-size: 12px !important;
     margin-left: 4px !important;
   }
-}
-/* ======= Global Font Fix (Desktop English text) ======= */
-
-/* اعمال فونت وزیر برای کل بدنه (فارسی) */
-body, .helix-page {
-  font-family: "Vazir", system-ui, sans-serif !important;
-}
-
-/* اعمال فونت Inter برای متون انگلیسی */
-:lang(en),
-button:lang(en),
-.btn,
-.helix-page [lang="en"],
-.helix-page button,
-.helix-page input,
-.helix-page select {
-  font-family: "Inter", "Vazir", system-ui, sans-serif !important;
-  letter-spacing: 0.2px;
-}
-
-/* مخصوص دکمه‌های EN و خروج */
-.HeaderBar,
-.HeaderBar button,
-.HeaderBar span,
-button,
-.btn span {
-  font-family: "Inter", "Vazir", system-ui, sans-serif !important;
 }
