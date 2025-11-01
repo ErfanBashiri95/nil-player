@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useRef } from "react";
 import allowed from "../data/allowedUsers.json";
 
 const AuthContext = createContext(null);
@@ -8,8 +8,9 @@ const STORAGE_KEY = "nil_auth";
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  const firstLoad = useRef(true);
 
-  // hydrate from localStorage
+  // بازیابی از localStorage
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -17,7 +18,7 @@ export default function AuthProvider({ children }) {
     } catch {}
   }, []);
 
-  // persist to localStorage
+  // ماندگاری وضعیت
   useEffect(() => {
     try {
       if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
@@ -27,7 +28,7 @@ export default function AuthProvider({ children }) {
 
   const login = async (username) => {
     const u = String(username || "").trim().toLowerCase();
-    const found = allowed.find(x => x.username.trim().toLowerCase() === u);
+    const found = allowed.find((item) => item.username.trim().toLowerCase() === u);
     if (!found) throw new Error("not-allowed");
 
     const userObj = {
@@ -37,20 +38,35 @@ export default function AuthProvider({ children }) {
     };
 
     setUser(userObj);
-    // مهم: بعد از ست شدن state ایونت را بفرست
-    queueMicrotask(() => {
-      window.dispatchEvent(new CustomEvent("nil:user-changed", { detail: { user: userObj }}));
-    });
-
+    // مهم: با تاخیر microtask تا React ست کنه
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("nil:user-changed", { detail: { user: userObj } })
+      );
+    }, 50);
     return userObj;
   };
 
   const logout = () => {
     setUser(null);
-    queueMicrotask(() => {
+    setTimeout(() => {
       window.dispatchEvent(new Event("nil:user-logged-out"));
-    });
+    }, 50);
   };
+
+  // وقتی از localStorage بازیابی شد هم یکبار ایونت بفرست
+  useEffect(() => {
+    if (firstLoad.current) {
+      firstLoad.current = false;
+      if (user) {
+        setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent("nil:user-changed", { detail: { user } })
+          );
+        }, 100);
+      }
+    }
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>
