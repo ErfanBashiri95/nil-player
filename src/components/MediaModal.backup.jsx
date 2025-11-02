@@ -39,17 +39,6 @@ export default function MediaModal({
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
-  const wrapRef = useRef(null); // ⬅️ برای فول‌اسکرینِ باکس شامل واترمارک
-
-  // فول‌اسکرین سفارشی روی کل باکس (نه خود ویدئو)
-  const enterFullscreen = async () => {
-    const el = wrapRef.current;
-    if (!el) return;
-    try {
-      if (el.requestFullscreen) await el.requestFullscreen();
-      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); // Safari/iOS
-    } catch {}
-  };
 
   // ===== progress state (فقط برای ویدئو مهم است) =====
   const [duration, setDuration] = useState(0);
@@ -59,6 +48,8 @@ export default function MediaModal({
     now - lastSentRef.current > 5000 ? ((lastSentRef.current = now), true) : false;
 
   // ===== start position =====
+  // ویدئو: از DB (یا initialTime)
+  // پادکست: فقط از localStorage
   const [startAt, setStartAt] = useState(0);
 
   useEffect(() => {
@@ -69,6 +60,7 @@ export default function MediaModal({
         const local = readAudioResume(username, sessionId);
         if (!cancelled) setStartAt(local || 0);
       } else {
+        // حتی اگر از صفحه map صفر بود، مستقیم از DB هم می‌گیریم تا بعد از login دقیق باشد
         const base = Number(initialTime || 0);
         if (base > 0) {
           setStartAt(base);
@@ -386,19 +378,19 @@ export default function MediaModal({
 
         {/* body */}
         {type === "video" ? (
-          <div ref={wrapRef} style={{ position: "relative" }}>
+          <div style={{ position: "relative" }}>
             <video
               ref={videoRef}
               controls
               playsInline
               autoPlay
-              controlsList="nodownload noremoteplayback nofullscreen" 
+              controlsList="nodownload noremoteplayback"
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
               style={S.video}
             />
 
-            {/* واترمارک */}
+            {/* watermark */}
             {username && (
               <div style={{
                 position: "absolute",
@@ -412,18 +404,17 @@ export default function MediaModal({
                 pointerEvents: "none",
                 userSelect: "none",
                 textShadow: "0 0 10px rgba(0,0,0,.7)",
-                zIndex: 5, // ⬅️ همیشه روی ویدئو
               }}>
                 {`${username} • ${dateStr} ${timeStr}`}
               </div>
             )}
 
-            {/* هشدار ضبط */}
+            {/* warn */}
             {warning && (
               <div style={S.warn}>⚠️ ضبط صفحه شناسایی شد!<br />لطفاً ضبط را متوقف کنید.</div>
             )}
 
-            {/* سرعت */}
+            {/* speed */}
             <div style={S.fabRate}>
               <select
                 value={playbackRate}
@@ -435,28 +426,6 @@ export default function MediaModal({
                 ))}
               </select>
             </div>
-
-            {/* دکمهٔ فول‌اسکرین سفارشی */}
-            <button
-              onClick={enterFullscreen}
-              style={{
-                position: "absolute",
-                right: 10,
-                bottom: 10,
-                padding: "8px 10px",
-                borderRadius: 10,
-                background: "rgba(255,255,255,.12)",
-                border: "1px solid rgba(255,255,255,.25)",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: "pointer",
-                backdropFilter: "blur(6px)",
-                zIndex: 6,
-              }}
-              title="تمام‌صفحه"
-            >
-              ⛶
-            </button>
           </div>
         ) : (
           <div style={S.audioBox}>
