@@ -421,7 +421,7 @@ export default function MediaModal({
                 onChange={(e) => applyRate(Number(e.target.value))}
                 style={S.fabSelect}
               >
-                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((s) => (
+                {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (
                   <option key={s} value={s}>{s}x</option>
                 ))}
               </select>
