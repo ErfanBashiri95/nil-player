@@ -34,22 +34,41 @@ export default function MediaModal({
   const [wmPos, setWmPos] = useState({ top: "20%", left: "30%" });
   const [warning, setWarning] = useState(false);
   const [expired, setExpired] = useState(false);
+  const [isFs, setIsFs] = useState(false); // ⬅️ وضعیت فول‌اسکرین
 
   // ===== refs =====
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const hlsRef = useRef(null);
-  const wrapRef = useRef(null); // ⬅️ برای فول‌اسکرینِ باکس شامل واترمارک
+  const wrapRef = useRef(null); // ⬅️ قاب کنترل‌شده برای فول‌اسکرین
 
-  // فول‌اسکرین سفارشی روی کل باکس (نه خود ویدئو)
+  // فول‌اسکرین سفارشی روی قاب شامل واترمارک/کنترل‌ها
   const enterFullscreen = async () => {
     const el = wrapRef.current;
     if (!el) return;
     try {
       if (el.requestFullscreen) await el.requestFullscreen();
-      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen(); // Safari/iOS
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     } catch {}
   };
+  const exitFullscreen = async () => {
+    try {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch {}
+  };
+  useEffect(() => {
+    const onFsChange = () => {
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+      setIsFs(!!fsEl);
+    };
+    document.addEventListener("fullscreenchange", onFsChange);
+    document.addEventListener("webkitfullscreenchange", onFsChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFsChange);
+      document.removeEventListener("webkitfullscreenchange", onFsChange);
+    };
+  }, []);
 
   // ===== progress state (فقط برای ویدئو مهم است) =====
   const [duration, setDuration] = useState(0);
@@ -88,7 +107,7 @@ export default function MediaModal({
     setExpired(!validateSecureURL(url));
   }, [url, open]);
 
-  // واترمارک با تاریخ و ساعت
+  // واترمارک با تاریخ و ساعت (نمایش دوره‌ای)
   useEffect(() => {
     if (!open) return;
     const tick = () => {
@@ -103,7 +122,7 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // ضد ضبط صفحه (فقط ویدئو را pause کند)
+  // ضد ضبط صفحه (اختیاری: فقط pause)
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
@@ -117,7 +136,7 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // ESC برای بستن
+  // ESC برای بستن مودال
   useEffect(() => {
     const h = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", h);
@@ -345,7 +364,7 @@ export default function MediaModal({
   }
 
   const SpeedPills = ({ value, onChange }) => {
-    const presets = [0.75, 1, 1.25, 1.5, 2];
+    const presets = [0.5, 0.75, 1, 1.25, 1.5]; // ⬅️ همون بازه‌ای که می‌خواستی
     return (
       <div style={S.pillsRow}>
         <span style={S.pillsLabel}>سرعت پخش:</span>
@@ -386,13 +405,17 @@ export default function MediaModal({
 
         {/* body */}
         {type === "video" ? (
-          <div ref={wrapRef} style={{ position: "relative" }}>
+          <div
+            ref={wrapRef}
+            /* قاب استاندارد: در مودال 16:9 و حداکثر 80vh، در فول‌اسکرین خود قاب تمام‌صفحه می‌شود و ویدئو contain می‌ماند */
+            style={{ ...S.videoBox, ...(isFs ? { maxHeight: "100vh" } : null) }}
+          >
             <video
               ref={videoRef}
               controls
               playsInline
               autoPlay
-              controlsList="nodownload noremoteplayback nofullscreen" 
+              controlsList="nodownload noremoteplayback nofullscreen" /* دکمه پیش‌فرض فول‌اسکرین حذف؛ از سفارشی استفاده می‌کنیم */
               disablePictureInPicture
               onContextMenu={(e) => e.preventDefault()}
               style={S.video}
@@ -412,7 +435,7 @@ export default function MediaModal({
                 pointerEvents: "none",
                 userSelect: "none",
                 textShadow: "0 0 10px rgba(0,0,0,.7)",
-                zIndex: 5, // ⬅️ همیشه روی ویدئو
+                zIndex: 5,
               }}>
                 {`${username} • ${dateStr} ${timeStr}`}
               </div>
@@ -425,38 +448,24 @@ export default function MediaModal({
 
             {/* سرعت */}
             <div style={S.fabRate}>
-              <select
-                value={playbackRate}
-                onChange={(e) => applyRate(Number(e.target.value))}
-                style={S.fabSelect}
-              >
+            <select
+  className="media-rate"
+  value={playbackRate}
+  onChange={(e) => applyRate(Number(e.target.value))}
+  style={S.fabSelect}
+>
                 {[0.5, 0.75, 1, 1.25, 1.5].map((s) => (
                   <option key={s} value={s}>{s}x</option>
                 ))}
               </select>
             </div>
 
-            {/* دکمهٔ فول‌اسکرین سفارشی */}
-            <button
-              onClick={enterFullscreen}
-              style={{
-                position: "absolute",
-                right: 10,
-                bottom: 10,
-                padding: "8px 10px",
-                borderRadius: 10,
-                background: "rgba(255,255,255,.12)",
-                border: "1px solid rgba(255,255,255,.25)",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: "pointer",
-                backdropFilter: "blur(6px)",
-                zIndex: 6,
-              }}
-              title="تمام‌صفحه"
-            >
-              ⛶
-            </button>
+            {/* دکمه‌های فول‌اسکرین/خروج */}
+            {!isFs ? (
+              <button onClick={enterFullscreen} style={S.fsBtn} title="تمام‌صفحه">⤢</button>
+            ) : (
+              <button onClick={exitFullscreen} style={{ ...S.fsBtn, right: 54 }} title="خروج از تمام‌صفحه">⤡</button>
+            )}
           </div>
         ) : (
           <div style={S.audioBox}>
@@ -488,8 +497,7 @@ const S = {
     animation: "fadeIn .25s ease",
   },
   card: {
-    width: "min(680px, 92vw)",
-    ...(typeof window !== "undefined" && window.innerWidth < 520 ? { width: "min(520px, 94vw)" } : {}),
+    width: "min(900px, 96vw)",
     background: "linear-gradient(180deg, rgba(20,25,45,.78), rgba(16,20,38,.92))",
     borderRadius: 20, padding: 16, position: "relative", color: "#fff",
     boxShadow: "0 10px 35px rgba(0,0,0,.5)", border: "1px solid rgba(255,255,255,.12)",
@@ -516,22 +524,78 @@ const S = {
     background: "rgba(255,255,255,.06)", color: "#fff", fontSize: 20,
     cursor: "pointer", boxShadow: "0 4px 14px rgba(0,0,0,.35)",
   },
-  video: { width: "100%", borderRadius: 14, background: "#000", outline: "1px solid rgba(255,255,255,.06)" },
+
+  /* قاب استاندارد ویدئو */
+  videoBox: {
+    position: "relative",
+    width: "100%",
+    aspectRatio: "16/9",
+    maxHeight: "80vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#000",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+
+  /* خود ویدئو */
+  video: {
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    background: "#000",
+    outline: "1px solid rgba(255,255,255,.06)",
+  },
+
   warn: {
     position: "absolute", inset: 0, background: "rgba(0,0,0,.75)", color: "#ff5a5a",
     fontWeight: 800, fontSize: "clamp(14px, 2vw, 18px)",
     display: "flex", alignItems: "center", justifyContent: "center",
     textAlign: "center", zIndex: 10, backdropFilter: "blur(8px)",
   },
+
+  /* دکمه فول‌اسکرین */
+  fsBtn: {
+    position: "absolute",
+    bottom: 10,
+    right: 10,
+    zIndex: 6,
+    width: 36,
+    height: 36,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,.22)",
+    background: "rgba(0,0,0,.45)",
+    color: "#fff",
+    fontSize: 16,
+    cursor: "pointer",
+    boxShadow: "0 6px 14px rgba(0,0,0,.35)",
+  },
+
   fabRate: {
     position: "absolute", top: 10, right: 10,
+    zIndex: 6,
     background: "rgba(0,0,0,.45)", border: "1px solid rgba(255,255,255,.22)",
     borderRadius: 12, padding: "2px 6px", boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
   fabSelect: {
-    background: "transparent", color: "#0B1A3A",
-    border: "none", fontSize: 13, outline: "none", cursor: "pointer",
+    appearance: "none",
+    WebkitAppearance: "none",
+    MozAppearance: "none",
+    background: "#E9F1FF", // 🎨 رنگ پس‌زمینه دکمه‌ی سرعت
+    color: "#0B1A3A", // 🎨 رنگ متن سرمه‌ای
+    border: "1px solid rgba(26,131,204,.4)", // حاشیه ملایم آبی
+    borderRadius: 8,
+    fontSize: 13,
+    fontWeight: 600,
+    padding: "4px 10px",
+    outline: "none",
+    cursor: "pointer",
   },
+  
+
   audioBox: {
     background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.12)",
     borderRadius: 14, padding: 12,
@@ -542,7 +606,7 @@ const S = {
   pillsWrap: { display: "flex", gap: 6, flexWrap: "wrap" },
   pill: {
     padding: "6px 10px", borderRadius: 999, background: "rgba(255,255,255,.08)",
-    border: "1px solid rgba(255,255,255,.18)", color: "#fff",
+    border: "1px solid rgba(255,255,255,.18)", color: "#0B1A3A",
     fontSize: 12.5, fontWeight: 800, cursor: "pointer",
   },
   pillActive: {
