@@ -1,0 +1,25 @@
+/* وزن‌هایی که لازم داری را ایمپورت کن (باید اولین خطوط فایل باشند) */
+@import "@fontsource/vazirmatn/400.css";
+@import "@fontsource/vazirmatn/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/700.css";
+
+/* --- ریست اسکرول و مارجین برای کل سایت --- */
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden; /* جلوگیری از اسکرول کل صفحه (Helix01/02 بدون اسکرول) */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* فونت‌های سراسری */
+html, body {
+  font-family: "Vazirmatn", system-ui, -apple-system, "Segoe UI",
+               Roboto, "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, sans-serif;
+}
+:lang(en), .en {
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+*, input, button, select, textarea { font-family: inherit; }

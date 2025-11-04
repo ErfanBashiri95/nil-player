@@ -1,0 +1,13 @@
+/* فونت پایه کل پروژه */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto,
+               "Noto Naskh Arabic", "Noto Sans Arabic", Tahoma, sans-serif;
+  background-color: #0a1022;
+}
+
+/* اطمینان از ارث‌بری فونت در کنترل‌ها */
+*, *::before, *::after { box-sizing: border-box; }
+input, button, select, textarea { font-family: inherit; }
