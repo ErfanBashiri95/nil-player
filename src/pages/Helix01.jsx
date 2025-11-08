@@ -162,12 +162,43 @@ export default function Helix01() {
                   <h3 className="session-title">{s.title}</h3>
                   <p className="session-desc">{s.desc}</p>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                    <button className="btn btn-primary" onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}>
-                      <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}>🎬</span>
-                      {STR("video")}
-                    </button>
-                  </div>
+                  <div
+  style={{
+    display: "grid",
+    gridTemplateColumns: s.audioUrl ? "1fr 1fr" : "1fr", // دو ستون فقط وقتی audio داره
+    gap: 8,
+  }}
+>
+  <button
+    className="btn btn-primary"
+    onClick={() => openMedia("video", s.videoUrl, s.title, s.id)}
+  >
+    <span
+      aria-hidden="true"
+      style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}
+    >
+      🎬
+    </span>
+    {STR("video")}
+  </button>
+
+  {/* فقط اگر در دیتابیس audio_url وجود داشت */}
+  {s.audioUrl && (
+    <button
+      className="btn btn-ghost"
+      onClick={() => openMedia("audio", s.audioUrl, s.title, s.id)}
+    >
+      <span
+        aria-hidden="true"
+        style={{ fontSize: 14, lineHeight: 1, marginLeft: 6 }}
+      >
+        🎧
+      </span>
+      {STR("podcast")}
+    </button>
+  )}
+</div>
+
                 </article>
               );
             })}
