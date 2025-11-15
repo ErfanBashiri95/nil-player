@@ -349,6 +349,25 @@ export default function MediaModal({
     if (audioRef.current) audioRef.current.playbackRate = r;
   };
 
+  // ===== 30s skip helpers (back / forward) =====
+  const seekBy = (deltaSeconds) => {
+    const v = videoRef.current;
+    if (!v) return;
+    try {
+      const cur = v.currentTime || 0;
+      const dur = v.duration || 0;
+      let next = cur + deltaSeconds;
+      if (dur > 0) {
+        // بین 0 و انتهای ویدئو نگهش می‌داریم
+        next = Math.max(0, Math.min(dur - 0.25, next));
+      } else {
+        next = Math.max(0, next);
+      }
+      v.currentTime = next;
+    } catch {}
+  };
+
+
   if (!open) return null;
 
   if (expired) {
@@ -420,6 +439,14 @@ export default function MediaModal({
               onContextMenu={(e) => e.preventDefault()}
               style={S.video}
             />
+            {/* دکمه‌های ۳۰ ثانیه عقب / جلو */}
+    {/* 30-sec Seek Buttons (Above Controls) */}
+<div style={S.seekBar}>
+  <button onClick={() => shift(-30)} style={S.seekBtn}>⏪ 30s</button>
+  <button onClick={() => shift(+30)} style={S.seekBtn}>30s ⏩</button>
+</div>
+
+
 
             {/* واترمارک */}
             {username && (
@@ -573,6 +600,34 @@ const S = {
     cursor: "pointer",
     boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
+
+  /* دکمه‌های ۳۰ ثانیه‌ای */
+  seekBar: {
+    position: "absolute",
+    bottom: "27px", // دقیقاً بالای کنترل‌های ویدئو
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    gap: "14px",
+    zIndex: 8,
+  },
+  
+  seekBtn: {
+    padding: "6px 12px",
+    fontSize: "14px",
+    fontWeight: 800,
+    background: "rgba(0,0,0,.45)",
+    border: "1px solid rgba(255,255,255,.25)",
+    borderRadius: 8,
+    color: "#fff",
+    cursor: "pointer",
+    backdropFilter: "blur(6px)",
+    WebkitBackdropFilter: "blur(6px)",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+    transition: "all .2s",
+  },
+  
+
 
   fabRate: {
     position: "absolute", top: 10, right: 10,
