@@ -16,6 +16,7 @@ const readAudioResume = (username, sessionId) => {
     return 0;
   }
 };
+
 const writeAudioResume = (username, sessionId, seconds) => {
   try {
     localStorage.setItem(
@@ -44,7 +45,7 @@ export default function MediaModal({
   const [wmPos, setWmPos] = useState({ top: "20%", left: "30%" });
   const [warning, setWarning] = useState(false);
   const [expired, setExpired] = useState(false);
-  const [isFs, setIsFs] = useState(false); // وضعیت فول اسکرین
+  const [isFs, setIsFs] = useState(false); // وضعیت فول‌اسکرین
 
   // ===== refs =====
   const videoRef = useRef(null);
@@ -61,16 +62,17 @@ export default function MediaModal({
       else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     } catch {}
   };
+
   const exitFullscreen = async () => {
     try {
       if (document.exitFullscreen) await document.exitFullscreen();
       else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
     } catch {}
   };
+
   useEffect(() => {
     const onFsChange = () => {
-      const fsEl =
-        document.fullscreenElement || document.webkitFullscreenElement;
+      const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
       setIsFs(!!fsEl);
     };
     document.addEventListener("fullscreenchange", onFsChange);
@@ -137,7 +139,7 @@ export default function MediaModal({
     return () => clearInterval(id);
   }, [open]);
 
-  // ضد ضبط صفحه (اختیاری: فقط pause)
+  // ضد ضبط صفحه (اختیاری)
   useEffect(() => {
     if (!open) return;
     const id = setInterval(async () => {
@@ -171,30 +173,18 @@ export default function MediaModal({
     } catch {}
   };
 
-  // ===== دکمه‌های ۳۰± ثانیه =====
+  // جابه‌جایی ۳۰ ثانیه‌ای
   const handleSeek = (delta) => {
-    const v = videoRef.current;
-    if (!v) return;
+    const video = videoRef.current;
+    if (!video) return;
+    const d = video.duration || 0;
+    if (!d) return;
+    const current = video.currentTime || 0;
+    const next = Math.min(d, Math.max(0, current + delta));
     try {
-      const cur = v.currentTime || 0;
-      const dur = v.duration;
-      let next = cur + delta;
-
-      if (!Number.isNaN(dur) && Number.isFinite(dur) && dur > 0) {
-        if (next < 0) next = 0;
-        if (next > dur) next = dur - 0.25;
-      } else if (next < 0) {
-        next = 0;
-      }
-
-      if (typeof v.fastSeek === "function") {
-        v.fastSeek(next);
-      } else {
-        v.currentTime = next;
-      }
-    } catch (e) {
-      console.warn("seek failed", e);
-    }
+      video.currentTime = next;
+      setMaxSeen((prev) => Math.max(prev, next));
+    } catch {}
   };
 
   // ================= VIDEO (HLS + DB progress) =================
@@ -514,7 +504,11 @@ export default function MediaModal({
               {title}
             </h3>
           </div>
-          <button onClick={onClose} aria-label="بستن" style={S.closeBtn}>
+          <button
+            onClick={onClose}
+            aria-label="بستن"
+            style={S.closeBtn}
+          >
             ×
           </button>
         </div>
@@ -538,32 +532,6 @@ export default function MediaModal({
               onContextMenu={(e) => e.preventDefault()}
               style={S.video}
             />
-
-            {/* دکمه‌های ۳۰± ثانیه */}
-            <div style={S.seekBar}>
-              <button
-                type="button"
-                style={S.seekBtn}
-                onClick={() => handleSeek(-30)}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  handleSeek(-30);
-                }}
-              >
-                ⏪ -30
-              </button>
-              <button
-                type="button"
-                style={S.seekBtn}
-                onClick={() => handleSeek(30)}
-                onTouchStart={(e) => {
-                  e.preventDefault();
-                  handleSeek(30);
-                }}
-              >
-                30+ ⏩
-              </button>
-            </div>
 
             {/* واترمارک */}
             {username && (
@@ -596,6 +564,24 @@ export default function MediaModal({
                 لطفاً ضبط را متوقف کنید.
               </div>
             )}
+
+            {/* دکمه‌های ±30 ثانیه */}
+            <div style={S.seekBar}>
+              <button
+                type="button"
+                style={S.seekBtn}
+                onClick={() => handleSeek(-30)}
+              >
+                −30s
+              </button>
+              <button
+                type="button"
+                style={S.seekBtn}
+                onClick={() => handleSeek(30)}
+              >
+                +30s
+              </button>
+            </div>
 
             {/* سرعت */}
             <div style={S.fabRate}>
@@ -718,7 +704,7 @@ const S = {
     boxShadow: "0 4px 14px rgba(0,0,0,.35)",
   },
 
-  // قاب استاندارد ویدئو
+  /* قاب استاندارد ویدئو */
   videoBox: {
     position: "relative",
     width: "100%",
@@ -732,6 +718,7 @@ const S = {
     overflow: "hidden",
   },
 
+  /* خود ویدئو */
   video: {
     width: "100%",
     height: "100%",
@@ -755,7 +742,7 @@ const S = {
     backdropFilter: "blur(8px)",
   },
 
-  // دکمه فول‌اسکرین
+  /* دکمه فول‌اسکرین */
   fsBtn: {
     position: "absolute",
     bottom: 10,
@@ -774,7 +761,32 @@ const S = {
     boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
 
-  // باکس سرعت
+  /* ردیف دکمه‌های ±30 ثانیه */
+  seekBar: {
+    position: "absolute",
+    bottom: 52, // دقیقاً بالای کنترل‌های ویدئو
+    left: "50%",
+    transform: "translateX(-50%)",
+    display: "flex",
+    gap: 18,
+    zIndex: 8,
+  },
+  seekBtn: {
+    padding: "4px 10px",
+    fontSize: 12,
+    fontWeight: 700,
+    background: "rgba(0,0,0,.45)",
+    border: "1px solid rgba(255,255,255,.25)",
+    borderRadius: 6,
+    color: "#fff",
+    cursor: "pointer",
+    backdropFilter: "blur(6px)",
+    WebkitBackdropFilter: "blur(6px)",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+    transition: "all .2s",
+    touchAction: "manipulation",
+  },
+
   fabRate: {
     position: "absolute",
     top: 10,
@@ -793,31 +805,6 @@ const S = {
     fontSize: 13,
     outline: "none",
     cursor: "pointer",
-  },
-
-  // ردیف دکمه‌های ۳۰± ثانیه
-  seekBar: {
-    position: "absolute",
-    bottom: 27, // دقیقا بالای کنترل‌های ویدئو
-    left: "50%",
-    transform: "translateX(-50%)",
-    display: "flex",
-    gap: 14,
-    zIndex: 8,
-  },
-  seekBtn: {
-    padding: "6px 12px",
-    fontSize: 14,
-    fontWeight: 800,
-    background: "rgba(0,0,0,.45)",
-    border: "1px solid rgba(255,255,255,.25)",
-    borderRadius: 8,
-    color: "#fff",
-    cursor: "pointer",
-    backdropFilter: "blur(6px)",
-    WebkitBackdropFilter: "blur(6px)",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
-    transition: "all .2s",
   },
 
   audioBox: {
@@ -861,4 +848,3 @@ const S = {
     cursor: "pointer",
   },
 };
-
