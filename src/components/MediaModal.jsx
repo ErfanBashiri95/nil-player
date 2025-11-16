@@ -173,19 +173,7 @@ export default function MediaModal({
     } catch {}
   };
 
-  // جابه‌جایی ۳۰ ثانیه‌ای
-  const handleSeek = (delta) => {
-    const video = videoRef.current;
-    if (!video) return;
-    const d = video.duration || 0;
-    if (!d) return;
-    const current = video.currentTime || 0;
-    const next = Math.min(d, Math.max(0, current + delta));
-    try {
-      video.currentTime = next;
-      setMaxSeen((prev) => Math.max(prev, next));
-    } catch {}
-  };
+  
 
   // ================= VIDEO (HLS + DB progress) =================
   useEffect(() => {
@@ -565,23 +553,7 @@ export default function MediaModal({
               </div>
             )}
 
-            {/* دکمه‌های ±30 ثانیه */}
-            <div style={S.seekBar}>
-              <button
-                type="button"
-                style={S.seekBtn}
-                onClick={() => handleSeek(-30)}
-              >
-                −30s
-              </button>
-              <button
-                type="button"
-                style={S.seekBtn}
-                onClick={() => handleSeek(30)}
-              >
-                +30s
-              </button>
-            </div>
+            
 
             {/* سرعت */}
             <div style={S.fabRate}>
@@ -761,31 +733,7 @@ const S = {
     boxShadow: "0 6px 14px rgba(0,0,0,.35)",
   },
 
-  /* ردیف دکمه‌های ±30 ثانیه */
-  seekBar: {
-    position: "absolute",
-    bottom: 52, // دقیقاً بالای کنترل‌های ویدئو
-    left: "50%",
-    transform: "translateX(-50%)",
-    display: "flex",
-    gap: 18,
-    zIndex: 8,
-  },
-  seekBtn: {
-    padding: "4px 10px",
-    fontSize: 12,
-    fontWeight: 700,
-    background: "rgba(0,0,0,.45)",
-    border: "1px solid rgba(255,255,255,.25)",
-    borderRadius: 6,
-    color: "#fff",
-    cursor: "pointer",
-    backdropFilter: "blur(6px)",
-    WebkitBackdropFilter: "blur(6px)",
-    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
-    transition: "all .2s",
-    touchAction: "manipulation",
-  },
+  
 
   fabRate: {
     position: "absolute",
