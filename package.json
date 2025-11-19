@@ -8,8 +8,7 @@
     "key:dev": "node server/index.cjs",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "start":"serve -s dist -| $PORT"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
