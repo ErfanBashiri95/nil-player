@@ -187,3 +187,39 @@
     margin-left: 4px !important;
   }
 }
+/* =========================
+   EMPATHY108 – Buttons (Final)
+   ========================= */
+
+/* ---------- دکمه ویدئو ---------- */
+.empathy-page .btn-primary {
+  background: linear-gradient(90deg, #f43f5e 0%, #fb7185 100%);
+  border: none;
+  box-shadow: 0 0 16px rgba(244, 63, 94, 0.45);
+  color: #ffffff !important;
+  font-weight: 800;
+}
+
+.empathy-page .btn-primary:hover {
+  background: linear-gradient(90deg, #e11d48 0%, #f43f5e 100%);
+}
+
+/* =========================
+   EMPATHY108 – Logout Button (FINAL FIX)
+   ========================= */
+
+/* دکمه خروج (بالا سمت راست) */
+.empathy-page > div > button:last-child {
+  background: linear-gradient(90deg, #f43f5e 0%, #fb7185 100%) !important;
+  border: none !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  box-shadow: 0 0 14px rgba(244, 63, 94, 0.55) !important;
+}
+
+/* hover دکمه خروج */
+.empathy-page > div > button:last-child:hover {
+  background: linear-gradient(90deg, #e11d48 0%, #f43f5e 100%) !important;
+}
+
+

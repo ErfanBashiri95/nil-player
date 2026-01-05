@@ -161,7 +161,7 @@ export default function Empathy() {
   const pageSubtitle = STR("subtitle") || "";
 
   return (
-    <div key={user?.username || "anon"} className="helix-page">
+    <div key={user?.username || "anon"} className="helix-page empathy-page">
       <HeaderBar />
       <div
   className="helix-bg"
