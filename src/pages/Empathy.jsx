@@ -186,7 +186,7 @@ export default function Empathy() {
       <div className="helix-shade" />
 
       <main className="helix-content" style={{ visibility: ready ? "visible" : "hidden" }}>
-        <section className="helix-hero" style={{ marginTop: isMobile ? "14vh" : undefined }}>
+        <section className="helix-hero" style={{ marginTop: isMobile ? "2vh" : undefined }}>
         <h1
   className="helix-title"
   style={{
