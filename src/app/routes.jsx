@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import Login from "../pages/Login.jsx";
 import Helix01 from "../pages/Helix01.jsx";
 import Helix02 from "../pages/Helix02.jsx";
+import Empathy from "../pages/Empathy.jsx";
 import NotFound from "../pages/NotFound.jsx";
 import ProtectedRoute from "../components/ProtectedRoute.jsx";
 
@@ -26,6 +27,24 @@ export const router = createBrowserRouter(
       element: (
         <ProtectedRoute>
           <Helix02 />
+        </ProtectedRoute>
+      ),
+    },
+
+    // ✅ EMPATHY108 (route جدید)
+    {
+      path: "/empathy108",
+      element: (
+        <ProtectedRoute>
+          <Empathy />
+        </ProtectedRoute>
+      ),
+    },
+    {
+      path: "/EMPATHY108",
+      element: (
+        <ProtectedRoute>
+          <Empathy />
         </ProtectedRoute>
       ),
     },

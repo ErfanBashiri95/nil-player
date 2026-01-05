@@ -282,7 +282,16 @@ export default function Login() {
     try {
       const user = await login(found.username);
       const code = (user?.course_code || found.course_code || "").toUpperCase();
-      navigate(code === "HELIX02" ? "/helix02" : "/helix01", { replace: true });
+
+navigate(
+  code === "HELIX02"
+    ? "/helix02"
+    : code === "EMPATHY108"
+    ? "/empathy108"
+    : "/helix01",
+  { replace: true }
+);
+
     } catch (err) {
       console.error(err);
       alert("خطا در ورود");
