@@ -1,6 +1,6 @@
 # 🌌 Nil Player — Secure Video Platform for Helix Coaching Academy
 
-**Nil Player** is a custom-built, secure, and elegant video-learning platform designed and developed entirely by **Erfan Bashiri** for **Nil Coaching Academy**.  
+**Nil Player** is a custom-built, secure, and elegant video-learning platform designed and developed entirely by **Erfan Bashiri and Ali Bashiri** for **Nil Coaching Academy**.  
 It delivers smooth video playback, learner progress tracking, and advanced anti-piracy measures — all inside a clean, responsive, bilingual interface.
 
 ---
@@ -144,9 +144,9 @@ Every feature, from watermark motion to playback speed limits, serves the same p
 
 ---
 
-🧑‍💻 Author
+🧑‍💻 Developers
 
-Erfan Bashiri
+Erfan Bashiri/Ali Bashiri
 Full-Stack Developer & Creative Engineer
 🌐 Nil Coaching Academy
 📍 Based in Tehran / Iran
@@ -164,7 +164,7 @@ React · Vite · Supabase · HLS.js · Secure Streaming · Frontend Developer ·
 
 📜 License
 
-© 2025 Nil Coaching Academy — Developed by Erfan Bashiri with 💙
+© 2025 Nil Coaching Academy — Developed by Erfan Bashiri/Ali Bashiri with 💙
 All rights reserved.
 
 ⭐ If you enjoy this project, please star the repo!
